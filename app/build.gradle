@@ -7,7 +7,7 @@ android {
         applicationId 'com.github.gcd888.guoju'
         targetSdkVersion 28
         versionCode 30
-        versionName '0.0.1.28'
+        versionName '0.0.1.29'
         multiDexEnabled true
         //设置room的Schema的位置
         javaCompileOptions {

@@ -32,7 +32,7 @@ import java.util.List;
 /**
  * 配置弹窗：配置 > 仓库 > 线路 三级钻取。
  * 每行删除按钮（配置级持久删、仓库/线路级会话删）；长按配置=刷新整棵资源树；
- * 线路激活走 API_URL + clearRuntimeCache + 重启首页现有链路（同 WarehouseDialog）。
+ * 线路激活走 API_URL + clearRuntimeCache + 重启首页现有链路。
  */
 public class ConfigDialog extends BaseDialog {
 
@@ -292,7 +292,7 @@ public class ConfigDialog extends BaseDialog {
         fetchAndEnter(node); // 加入后自动钻入该配置
     }
 
-    /** 激活线路（照搬 WarehouseDialog 生效链路，另记 CONFIG_ACTIVE 供✓回显）。 */
+    /** 激活线路（沿用既有生效链路，另记 CONFIG_ACTIVE 供✓回显）。 */
     private void applyLine(final ConfigNodeBean node) {
         String oldApi = Hawk.get(HawkConfig.API_URL, "");
         if (node.url.equals(oldApi)) {

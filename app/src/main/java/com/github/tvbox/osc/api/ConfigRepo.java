@@ -25,7 +25,7 @@ import java.util.Set;
  * 配置弹窗数据层：配置 > 仓库 > 线路 三级钻取。
  * 判型递归：storeHouse→仓库层 / urls→线路层 / sites→终端配置（可激活）。
  * 缺失层级由 ConfigDialog 补虚拟节点；无持久拉黑（仓库/线路删除仅会话内）。
- * clan:// 重写逻辑自 WarehouseRepo 吸收。
+ * clan:// 重写逻辑自旧多仓模块吸收。
  */
 public final class ConfigRepo {
 
@@ -290,7 +290,7 @@ public final class ConfigRepo {
         throw new org.json.JSONException("无法识别的配置格式");
     }
 
-    // ---------------- clan 协议（自 WarehouseRepo 吸收） ----------------
+    // ---------------- clan 协议 ----------------
 
     /** clan:// 文件转 http 请求地址；本地 localhost 由 ControlManager 提供。 */
     public static String toRequestUrl(String url) {
