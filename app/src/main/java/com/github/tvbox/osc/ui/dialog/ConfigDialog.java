@@ -181,7 +181,7 @@ public class ConfigDialog extends BaseDialog {
             @Override
             public void onSuccess(ConfigRepo.FetchResult result) {
                 if (!isShowing()) return;
-                enterByType(result, node.url, node.name);
+                enterByType(result, node);
             }
 
             @Override
@@ -193,25 +193,57 @@ public class ConfigDialog extends BaseDialog {
         });
     }
 
-    /** 按判型结果进入下一层，缺失层级补虚拟节点保证三级完整。 */
-    private void enterByType(ConfigRepo.FetchResult result, String url, String name) {
-        if (result.type == ConfigNodeBean.TYPE_WAREHOUSE) {
-            // 仓库列表：配置点入 or 仓库套娃，均以本级名加深面包屑、列表替换
-            Level level = new Level();
-            level.nodes.addAll(result.nodes);
-            pushLevel(level, name);
-        } else if (result.type == ConfigNodeBean.TYPE_LINE) {
-            // urls 型线路列表：缺仓库层 → 面包屑补「本级名 > 虚拟仓库名」，直接展示线路
-            Level level = new Level();
-            level.nodes.addAll(result.nodes);
-            pushLevel(level, name, ConfigRepo.genVirtualName("自定义仓库"));
-        } else {
-            // TERMINAL：补虚拟仓库 + 单条虚拟线路（url=本级自身，可激活）
-            Level level = new Level();
-            level.nodes.add(new ConfigNodeBean(ConfigRepo.genVirtualName("自定义线路"), url,
-                    ConfigNodeBean.TYPE_TERMINAL, true));
-            pushLevel(level, name, ConfigRepo.genVirtualName("自定义仓库"));
+    /**
+     * 按（被点节点类型, 判型结果）分派进入下一层，缺失层级补虚拟节点保证三级完整。
+     * node 为 null 时视为配置级（兼容旧调用）。
+     */
+    private void enterByType(ConfigRepo.FetchResult result, ConfigNodeBean node) {
+        int nodeType = node == null ? ConfigNodeBean.TYPE_CONFIG : node.type;
+        String crumb = node == null ? null : node.name;
+        String url = node == null ? "" : node.url;
+        switch (nodeType) {
+            case ConfigNodeBean.TYPE_LINE:
+                if (result.type == ConfigNodeBean.TYPE_TERMINAL) {
+                    applyLine(node); // 线路条目判型即终端：用真实名直接激活，不再压虚拟层
+                    return;
+                }
+                // 线路下钻：LINE 语义不变 / WAREHOUSE 加深为仓列表，均以真实名记账
+                pushLevel(buildLevel(result), crumb);
+                return;
+            case ConfigNodeBean.TYPE_WAREHOUSE:
+                if (result.type == ConfigNodeBean.TYPE_TERMINAL) {
+                    // 仓库下挂单终端：补虚拟线路即可激活，面包屑只记真实仓名
+                    Level level = new Level();
+                    level.nodes.add(new ConfigNodeBean(ConfigRepo.genVirtualName("自定义线路"), url,
+                            ConfigNodeBean.TYPE_TERMINAL, true));
+                    pushLevel(level, crumb);
+                    return;
+                }
+                // LINE → 线路层；WAREHOUSE → 仓库套娃仓列表，均不加虚拟仓库
+                pushLevel(buildLevel(result), crumb);
+                return;
+            default: // TYPE_CONFIG
+                if (result.type == ConfigNodeBean.TYPE_LINE) {
+                    // urls 型线路列表：缺仓库层 → 面包屑补「配置名 > 虚拟仓库名」
+                    pushLevel(buildLevel(result), crumb, ConfigRepo.genVirtualName("自定义仓库"));
+                } else if (result.type == ConfigNodeBean.TYPE_TERMINAL) {
+                    // 补虚拟仓库 + 单条虚拟线路（url=配置自身，可激活）
+                    Level level = new Level();
+                    level.nodes.add(new ConfigNodeBean(ConfigRepo.genVirtualName("自定义线路"), url,
+                            ConfigNodeBean.TYPE_TERMINAL, true));
+                    pushLevel(level, crumb, ConfigRepo.genVirtualName("自定义仓库"));
+                } else {
+                    // 仓库列表：以真实配置名加深面包屑
+                    pushLevel(buildLevel(result), crumb);
+                }
         }
+    }
+
+    /** 用判型结果（真实 json 名称节点）构建新层。 */
+    private Level buildLevel(ConfigRepo.FetchResult result) {
+        Level level = new Level();
+        level.nodes.addAll(result.nodes);
+        return level;
     }
 
     private boolean onItemLongClicked(ConfigNodeBean node) {
