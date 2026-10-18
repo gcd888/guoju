@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 配置弹窗条目：名称 + 生效✓ + 删除；tvName 锚定 ivSelected 左侧避免与✓重叠 -->
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="@dimen/vs_50"
+    android:layout_marginTop="@dimen/vs_10"
+    android:background="@drawable/button_home_sort_focus"
+    android:focusable="true">
+
+    <TextView
+        android:id="@+id/tvName"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout_toLeftOf="@id/ivSelected"
+        android:ellipsize="end"
+        android:gravity="center_vertical"
+        android:paddingLeft="@dimen/vs_20"
+        android:singleLine="true"
+        android:textColor="@color/atv_text_primary"
+        android:textSize="@dimen/ts_24" />
+
+    <TextView
+        android:id="@+id/ivSelected"
+        android:layout_width="wrap_content"
+        android:layout_height="match_parent"
+        android:layout_marginRight="@dimen/vs_10"
+        android:layout_toLeftOf="@id/ivDelete"
+        android:gravity="center"
+        android:text="✓"
+        android:textColor="@color/atv_accent"
+        android:textSize="@dimen/ts_24"
+        android:visibility="gone" />
+
+    <ImageView
+        android:id="@+id/ivDelete"
+        android:layout_width="@dimen/vs_40"
+        android:layout_height="match_parent"
+        android:layout_alignParentRight="true"
+        android:layout_centerVertical="true"
+        android:focusable="true"
+        android:padding="@dimen/vs_10"
+        android:src="@drawable/icon_delete" />
+</RelativeLayout>
