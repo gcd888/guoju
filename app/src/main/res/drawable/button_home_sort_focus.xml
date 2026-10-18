@@ -1,15 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- 分类 tab 焦点态：无背景无描边（聚焦提示靠文字变白，不遮挡任何内容） -->
 <selector xmlns:android="http://schemas.android.com/apk/res/android">
     <item android:state_focused="true">
         <shape>
-            <corners android:radius="20mm"/>
-            <solid android:color="@color/color_BD0CADE2"/>
+            <solid android:color="@android:color/transparent" />
         </shape>
     </item>
     <item android:state_focused="false">
         <shape>
-            <corners android:radius="20mm"/>
-            <solid android:color="@android:color/transparent"/>
+            <solid android:color="@android:color/transparent" />
         </shape>
     </item>
 </selector>

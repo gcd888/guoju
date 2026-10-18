@@ -4,10 +4,10 @@ android {
     compileSdkVersion 33
 
     defaultConfig {
-        applicationId 'com.github.tvbox.osc.jun'
+        applicationId 'com.github.gcd888.guoju'
         targetSdkVersion 28
-        versionCode 1
-        versionName '1.0.0'
+        versionCode 30
+        versionName '0.0.1.28'
         multiDexEnabled true
         //设置room的Schema的位置
         javaCompileOptions {
@@ -115,8 +115,8 @@ android {
     applicationVariants.configureEach { variant ->
         variant.outputs.configureEach { output ->
             def flavorNames = variant.productFlavors.collect { it.name }.join('-')
-            // 构建自定义文件名
-            def fileName = "TVBox_${variant.buildType.name}-${flavorNames}.apk"
+            // 构建自定义文件名（含版本号，如 GuoJu_0.0.1.2_debug-java32.apk）
+            def fileName = "GuoJu_${variant.versionName}_${variant.buildType.name}-${flavorNames}.apk"
             outputFileName = fileName
         }
     }

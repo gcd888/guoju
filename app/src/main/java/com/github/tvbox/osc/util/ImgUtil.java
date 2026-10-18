@@ -249,7 +249,7 @@ public class ImgUtil {
         }
     }
 
-    private static Object getUrl(String url) {
+    public static Object getUrl(String url) {
         if (url.startsWith("data:")) return url;
         String header = null;
         String referer = null;

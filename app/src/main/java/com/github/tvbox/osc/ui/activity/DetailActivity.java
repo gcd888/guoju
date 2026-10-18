@@ -103,6 +103,7 @@ public class DetailActivity extends BaseActivity {
     private PlayFragment playFragment = null;
     private View thumbContainer;
     private ImageView ivThumb;
+    private ImageView ivBackdrop;
     private TextView tvName;
     private TextView tvYear;
     private TextView tvSite;
@@ -184,6 +185,7 @@ public class DetailActivity extends BaseActivity {
         applyPreviewRoundCorners();
         thumbContainer = findViewById(R.id.thumbContainer);
         ivThumb = findViewById(R.id.ivThumb);
+        ivBackdrop = findViewById(R.id.ivBackdrop);
         applyThumbPreviewStyle();
         tvName = findViewById(R.id.tvName);
         tvYear = findViewById(R.id.tvYear);
@@ -911,7 +913,9 @@ public class DetailActivity extends BaseActivity {
                     setTextShow(tvDirector, "导演：", removeHtmlTag(mVideo.director));
                     setTextShow(tvDes, "内容简介：", removeHtmlTag(mVideo.des));
                     if (!TextUtils.isEmpty(mVideo.pic)) {
-                        com.github.tvbox.osc.util.ImgUtil.load(DefaultConfig.checkReplaceProxy(mVideo.pic), ivThumb, AutoSizeUtils.mm2px(mContext, 10), AutoSizeUtils.mm2px(mContext, 300), AutoSizeUtils.mm2px(mContext, 400), mVideo.name);
+                        String picUrl = DefaultConfig.checkReplaceProxy(mVideo.pic);
+                        com.github.tvbox.osc.util.ImgUtil.load(picUrl, ivThumb, AutoSizeUtils.mm2px(mContext, 10), AutoSizeUtils.mm2px(mContext, 300), AutoSizeUtils.mm2px(mContext, 400), mVideo.name);
+                        com.github.tvbox.osc.util.ImgUtil.load(picUrl, ivBackdrop, 0, AutoSizeUtils.mm2px(mContext, 1280), AutoSizeUtils.mm2px(mContext, 720), mVideo.name);
                     } else {
                         ivThumb.setImageDrawable(com.github.tvbox.osc.util.ImgUtil.createTextDrawable(mVideo.name));
                     }
@@ -921,6 +925,17 @@ public class DetailActivity extends BaseActivity {
                         mGridView.setVisibility(View.VISIBLE);
                         tvPlay.setVisibility(View.VISIBLE);
                         mEmptyPlayList.setVisibility(View.GONE);
+                        // Apple TV 风格：详情首屏默认聚焦播放按钮（仅 TV 端）
+                        if (com.github.tvbox.osc.util.ScreenUtils.isTv(mContext)) {
+                            tvPlay.post(new Runnable() {
+                                @Override
+                                public void run() {
+                                    if (tvPlay.getVisibility() == View.VISIBLE) {
+                                        tvPlay.requestFocus();
+                                    }
+                                }
+                            });
+                        }
 
                         VodInfo vodInfoRecord = RoomDataManger.getVodInfo(sourceKey, vodId);
                         // 读取历史记录

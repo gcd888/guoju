@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- 影视分类 tab（文字型，焦点白底黑字） -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="wrap_content"
-    android:layout_height="@dimen/vs_45"
+    android:layout_height="@dimen/vs_40"
     android:background="@drawable/button_home_sort_focus"
     android:clickable="true"
     android:focusable="true"
@@ -15,10 +16,11 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_gravity="center"
+        android:duplicateParentState="true"
         android:focusable="false"
         android:gravity="center"
-        android:textColor="@color/color_BBFFFFFF"
-        android:textSize="@dimen/ts_30" />
+        android:textColor="@color/tab_text_color"
+        android:textSize="@dimen/ts_24" />
 
     <ImageView
         android:id="@+id/tvFilter"

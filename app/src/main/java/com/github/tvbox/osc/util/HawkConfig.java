@@ -66,5 +66,7 @@ public class HawkConfig {
     public static final String DANMU_SIZE_SCALE = "danmu_size_scale";
     public static final String DANMU_RANDOM_COLOR = "danmu_random_color";
     public static final String DANMU_API = "danmu_api";
+    public static final String PUSH_SOURCE_LIST = "push_source_list"; // 多仓推送链接列表
+    public static final String WAREHOUSE_BLACKLIST = "warehouse_blacklist"; // 已删除仓条目黑名单
     public static boolean hotVodDelete;
 }

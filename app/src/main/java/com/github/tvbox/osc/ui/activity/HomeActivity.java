@@ -45,8 +45,12 @@ import com.github.tvbox.osc.ui.adapter.SelectDialogAdapter;
 import com.github.tvbox.osc.ui.adapter.SortAdapter;
 import com.github.tvbox.osc.ui.dialog.SelectDialog;
 import com.github.tvbox.osc.ui.dialog.TipDialog;
+import com.github.tvbox.osc.ui.fragment.CollectFragment;
 import com.github.tvbox.osc.ui.fragment.GridFragment;
+import com.github.tvbox.osc.ui.fragment.HistoryFragment;
+import com.github.tvbox.osc.ui.fragment.HomeGridPage;
 import com.github.tvbox.osc.ui.fragment.UserFragment;
+import com.github.tvbox.osc.ui.tv.focus.FocusScaleHelper;
 import com.github.tvbox.osc.ui.tv.widget.DefaultTransformer;
 import com.github.tvbox.osc.ui.tv.widget.FixedSpeedScroller;
 import com.github.tvbox.osc.ui.tv.widget.NoScrollViewPager;
@@ -56,6 +60,7 @@ import com.github.tvbox.osc.util.DefaultConfig;
 import com.github.tvbox.osc.util.FastClickCheckUtil;
 import com.github.tvbox.osc.util.FileUtils;
 import com.github.tvbox.osc.util.HawkConfig;
+import com.github.tvbox.osc.util.LogWriter;
 import com.github.tvbox.osc.util.LOG;
 import com.github.tvbox.osc.util.MD5;
 import com.github.tvbox.osc.viewmodel.SourceViewModel;
@@ -81,9 +86,19 @@ import java.util.Objects;
 import me.jessyan.autosize.utils.AutoSizeUtils;
 
 public class HomeActivity extends BaseActivity {
+    private static HomeActivity instance;
+
+    /** 首页两层状态：false=一级（Hero+tab+一行货架），true=二级（tab 吸顶+全屏多行网格）。 */
+    private boolean gridExpanded = false;
+
+    /** tab 双击检测：上一次点击位置与时间戳；pendingTabAction 为单击已选 tab 的延迟快捷逻辑。 */
+    private int lastTabClickPos = -1;
+    private long lastTabClickTime = 0;
+    private Runnable pendingTabAction = null;
+    /** 页面数据已就绪（可在两层间切换）。 */
+    private volatile boolean pageDataReady = false;
+
     private LinearLayout topLayout;
-    private LinearLayout contentLayout;
-    private TextView tvDate;
     private TextView tvName;
     private TvRecyclerView mGridView;
     private NoScrollViewPager mViewPager;
@@ -105,16 +120,6 @@ public class HomeActivity extends BaseActivity {
     private final Handler mHandler = new Handler();
     private long mExitTime = 0;
     private boolean eventBusRegistered = false;
-    private final Runnable mRunnable = new Runnable() {
-        @SuppressLint("SetTextI18n")
-        @Override
-        public void run() {
-            Date date = new Date();
-            SimpleDateFormat timeFormat = new SimpleDateFormat("yyyy/MM/dd  E  HH:mm", Locale.CHINA);
-            tvDate.setText(timeFormat.format(date));
-            mHandler.postDelayed(this, 1000);
-        }
-    };
     private final Runnable refreshTopInfoTextSizeRunnable = new Runnable() {
         @Override
         public void run() {
@@ -131,8 +136,8 @@ public class HomeActivity extends BaseActivity {
             // Re-apply the visible top state once the final display metrics are available.
             hideSysBar();
             ViewGroup.MarginLayoutParams params = (ViewGroup.MarginLayoutParams) topLayout.getLayoutParams();
-            params.topMargin = AutoSizeUtils.mm2px(HomeActivity.this, 10.0f);
-            params.height = AutoSizeUtils.mm2px(HomeActivity.this, 50.0f);
+            params.topMargin = 0;
+            params.height = AutoSizeUtils.mm2px(HomeActivity.this, 30.0f);
             topLayout.setLayoutParams(params);
             topLayout.setAlpha(1.0f);
             refreshTopInfoTextSize();
@@ -169,12 +174,12 @@ public class HomeActivity extends BaseActivity {
     }
 
     private void initView() {
+        instance = this;
         this.topLayout = findViewById(R.id.topLayout);
-        this.tvDate = findViewById(R.id.tvDate);
         this.tvName = findViewById(R.id.tvName);
-        this.contentLayout = findViewById(R.id.contentLayout);
         this.mGridView = findViewById(R.id.mGridView);
         this.mViewPager = findViewById(R.id.mViewPager);
+        initTopNav();
         this.sortAdapter = new SortAdapter();
         this.mGridView.setLayoutManager(new V7LinearLayoutManager(this.mContext, 0, false));
         this.mGridView.setSpacingWithMargins(0, AutoSizeUtils.dp2px(this.mContext, 10.0f));
@@ -195,24 +200,22 @@ public class HomeActivity extends BaseActivity {
             public void onItemPreSelected(TvRecyclerView tvRecyclerView, View view, int position) {
                 if (view != null && !HomeActivity.this.isDownOrUp) {
                     mHandler.postDelayed(new Runnable() {
-                        @Override
-                        public void run() {
-                            TextView textView = view.findViewById(R.id.tvTitle);
-                            textView.getPaint().setFakeBoldText(false);
-                            if (sortFocused == p) {
-                                view.animate().scaleX(1.1f).scaleY(1.1f).setInterpolator(new BounceInterpolator()).setDuration(300).start();
-                                textView.setTextColor(HomeActivity.this.getResources().getColor(R.color.color_FFFFFF));
-                            } else {
-                                view.animate().scaleX(1.0f).scaleY(1.0f).setDuration(300).start();
-                                textView.setTextColor(HomeActivity.this.getResources().getColor(R.color.color_BBFFFFFF));
-                                view.findViewById(R.id.tvFilter).setVisibility(View.GONE);
-                                view.findViewById(R.id.tvFilterColor).setVisibility(View.GONE);
+                            @Override
+                            public void run() {
+                                TextView textView = view.findViewById(R.id.tvTitle);
+                                textView.getPaint().setFakeBoldText(false);
+                                if (sortFocused == p) {
+                                    view.animate().scaleX(1.1f).scaleY(1.1f).setInterpolator(new BounceInterpolator()).setDuration(300).start();
+                                } else {
+                                    view.animate().scaleX(1.0f).scaleY(1.0f).setDuration(300).start();
+                                    view.findViewById(R.id.tvFilter).setVisibility(View.GONE);
+                                    view.findViewById(R.id.tvFilterColor).setVisibility(View.GONE);
+                                }
+                                textView.invalidate();
                             }
-                            textView.invalidate();
-                        }
 
-                        public final int p = position;
-                    }, 10);
+                            public final int p = position;
+                        }, 10);
                 }
             }
 
@@ -224,7 +227,6 @@ public class HomeActivity extends BaseActivity {
                     view.animate().scaleX(1.1f).scaleY(1.1f).setInterpolator(new BounceInterpolator()).setDuration(300).start();
                     TextView textView = view.findViewById(R.id.tvTitle);
                     textView.getPaint().setFakeBoldText(true);
-                    textView.setTextColor(HomeActivity.this.getResources().getColor(R.color.color_FFFFFF));
                     textView.invalidate();
                     MovieSort.SortData sortData = sortAdapter.getItem(position);
                     if (!sortData.filters.isEmpty()) {
@@ -239,38 +241,65 @@ public class HomeActivity extends BaseActivity {
 
             @Override
             public void onItemClick(TvRecyclerView parent, View itemView, int position) {
-                if (itemView != null && currentSelected == position) {
-                    BaseLazyFragment baseLazyFragment = fragments.get(currentSelected);
-                    if ((baseLazyFragment instanceof GridFragment) && !sortAdapter.getItem(position).filters.isEmpty()) {// 弹出筛选
-                        ((GridFragment) baseLazyFragment).showFilter();
-                    } else if (baseLazyFragment instanceof UserFragment) {
-                        showSiteSwitch();
+                // 双击 tab（400ms 内两击同位）：进入该 tab 的全屏多行网格
+                long now = android.os.SystemClock.uptimeMillis();
+                boolean doubleTab = position == lastTabClickPos && now - lastTabClickTime < 400;
+                lastTabClickPos = position;
+                lastTabClickTime = now;
+                if (doubleTab) {
+                    lastTabClickTime = 0; // 防三击连续触发
+                    mHandler.removeCallbacks(pendingTabAction); // 撤销第一击的延迟快捷逻辑
+                    if (!gridExpanded && position < fragments.size()) {
+                        sortFocused = position;
+                        enterGrid();
                     }
+                    return;
+                }
+                if (itemView != null && currentSelected == position) {
+                    // 单击已选 tab：延迟执行原快捷逻辑（筛选/站源切换），留出双击判定窗口
+                    final int pos = position;
+                    mHandler.removeCallbacks(pendingTabAction);
+                    pendingTabAction = new Runnable() {
+                        @Override
+                        public void run() {
+                            BaseLazyFragment baseLazyFragment = fragments.get(pos);
+                            if ((baseLazyFragment instanceof GridFragment) && !sortAdapter.getItem(pos).filters.isEmpty()) {// 弹出筛选
+                                ((GridFragment) baseLazyFragment).showFilter();
+                            } else if (baseLazyFragment instanceof UserFragment) {
+                                showSiteSwitch();
+                            }
+                        }
+                    };
+                    mHandler.postDelayed(pendingTabAction, 400);
                 }
             }
         });
 
         this.mGridView.setOnInBorderKeyEventListener(new TvRecyclerView.OnInBorderKeyEventListener() {
             public boolean onInBorderKeyEvent(int direction, View view) {
+                // 顶部导航栏接收上边界焦点，不再拦截刷新
                 if (direction == View.FOCUS_UP) {
-                    BaseLazyFragment baseLazyFragment = fragments.get(sortFocused);
-                    if (baseLazyFragment instanceof UserFragment) {
-                        refreshHomeSort();
-                        return true;
-                    }
-                    if (baseLazyFragment instanceof GridFragment) {
-                        ((GridFragment) baseLazyFragment).forceRefresh();
-                        return true;
-                    }
+                    return false;
                 }
                 if (direction != View.FOCUS_DOWN) {
                     return false;
                 }
-                BaseLazyFragment baseLazyFragment = fragments.get(sortFocused);
-                if (!(baseLazyFragment instanceof GridFragment)) {
+                if (gridExpanded) {
+                    // 二级态：tab 行下键进入当前 tab 的全屏网格
+                    if (sortFocused >= fragments.size()) {
+                        return false;
+                    }
+                    enterCurrentGrid();
+                    return true;
+                }
+                if (sortFocused >= fragments.size()) {
                     return false;
                 }
-                return !((GridFragment) baseLazyFragment).isLoad();
+                BaseLazyFragment baseLazyFragment = fragments.get(sortFocused);
+                if (!(baseLazyFragment instanceof HomeGridPage)) {
+                    return false;
+                }
+                return !((HomeGridPage) baseLazyFragment).isLoad();
             }
         });
         tvName.setOnClickListener(new View.OnClickListener() {
@@ -306,16 +335,91 @@ public class HomeActivity extends BaseActivity {
         tvName.setOnLongClickListener(new View.OnLongClickListener() {
             @Override
             public boolean onLongClick(View v) {
-                jumpActivity(SettingActivity.class);
+                // 长按首页图标切换站源，切换后重新加载首页内容
+                showSiteSwitch();
                 return true;
             }
         });
-        setLoadSir(this.contentLayout);
+        setLoadSir(this.mViewPager);
         //mHandler.postDelayed(mFindFocus, 500);
     }
 
 
     private boolean skipNextUpdate = false;
+
+    /** 顶部导航：Home 图标/直播/搜索/推送/收藏/设置（历史入口在推荐行尾部）。 */
+    private void initTopNav() {
+        View.OnClickListener listener = new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                FastClickCheckUtil.check(v);
+                int id = v.getId();
+                if (id == R.id.navHome) {
+                    backToHome();
+                } else if (id == R.id.navLive) {
+                    jumpActivity(LivePlayActivity.class);
+                } else if (id == R.id.navSearch) {
+                    jumpActivity(SearchActivity.class);
+                } else if (id == R.id.navPush) {
+                    // 多仓推送对话框（推送链接 > 仓 > 接口）
+                    new com.github.tvbox.osc.ui.dialog.WarehouseDialog(HomeActivity.this).show();
+                } else if (id == R.id.navSetting) {
+                    jumpActivity(SettingActivity.class);
+                }
+            }
+        };
+        int[] navIds = {R.id.navHome, R.id.navLive, R.id.navSearch, R.id.navPush, R.id.navSetting};
+        for (int navId : navIds) {
+            View nav = findViewById(navId);
+            nav.setOnClickListener(listener);
+            FocusScaleHelper.bind(nav);
+        }
+        // 站源切换入口：长按 Home 图标（原顶栏站源名的长按功能）
+        findViewById(R.id.navHome).setOnLongClickListener(new View.OnLongClickListener() {
+            @Override
+            public boolean onLongClick(View v) {
+                if (dataInitOk && jarInitOk) {
+                    showSiteSwitch();
+                    return true;
+                }
+                return false;
+            }
+        });
+    }
+
+    /** tab 行尾部固定页：观看历史 / 我的收藏（与分类网格同一套两层交互）。 */
+    private static final String TAB_NAV_HISTORY = "nav_history";
+    private static final String TAB_NAV_COLLECT = "nav_collect";
+
+    private static void appendNavTabs(List<MovieSort.SortData> list) {
+        if (list == null) {
+            return;
+        }
+        list.add(new MovieSort.SortData(TAB_NAV_HISTORY, "观看历史"));
+        list.add(new MovieSort.SortData(TAB_NAV_COLLECT, "我的收藏"));
+    }
+
+    /** 顶部 Home 图标：回到推荐首页（一级态、推荐 tab）。 */
+    private void backToHome() {
+        gridExpanded = false;
+        if (mViewPager != null && mViewPager.getCurrentItem() != 0) {
+            mViewPager.setCurrentItem(0);
+        }
+        if (mGridView != null) {
+            mGridView.setSelection(0);
+            mGridView.postDelayed(new Runnable() {
+                @Override
+                public void run() {
+                    if (mGridView != null) {
+                        mGridView.requestFocus();
+                        updateTabAnchor();
+                    }
+                }
+            }, 120);
+        } else {
+            updateTabAnchor();
+        }
+    }
 
     private void initViewModel() {
         sourceViewModel = new ViewModelProvider(this).get(SourceViewModel.class);
@@ -544,6 +648,10 @@ public class HomeActivity extends BaseActivity {
                     } else {
                         fragments.add(UserFragment.newInstance(null));
                     }
+                } else if (TAB_NAV_HISTORY.equals(data.id)) {
+                    fragments.add(HistoryFragment.newInstance());
+                } else if (TAB_NAV_COLLECT.equals(data.id)) {
+                    fragments.add(CollectFragment.newInstance());
                 } else {
                     fragments.add(GridFragment.newInstance(data));
                 }
@@ -560,6 +668,7 @@ public class HomeActivity extends BaseActivity {
             mViewPager.setPageTransformer(true, new DefaultTransformer());
             mViewPager.setAdapter(pageAdapter);
             mViewPager.setCurrentItem(currentSelected, false);
+            updateTabAnchor();
         }
     }
 
@@ -570,6 +679,9 @@ public class HomeActivity extends BaseActivity {
         sortChange = false;
         sortFocusView = null;
         currentView = null;
+        gridExpanded = false;
+        pageDataReady = false;
+        updateTabAnchor();
         if (pageAdapter != null) {
             mViewPager.setAdapter(null);
             pageAdapter.removeAll();
@@ -583,6 +695,7 @@ public class HomeActivity extends BaseActivity {
         if (newSortData == null) {
             newSortData = new ArrayList<>();
         }
+        appendNavTabs(newSortData);
         List<MovieSort.SortData> oldSortData = sortAdapter.getData();
         if (oldSortData.isEmpty()
                 || newSortData.isEmpty()
@@ -620,18 +733,31 @@ public class HomeActivity extends BaseActivity {
         if (HawkConfig.hotVodDelete) {
             HawkConfig.hotVodDelete = false;
             UserFragment.homeHotVodAdapter.notifyDataSetChanged();
+            HistoryFragment.resetDeleteMode();
+            CollectFragment.resetDeleteMode();
             return;
         }
 
         // 检查 fragments 状态
-        if (this.fragments.size() <= 0 || this.sortFocused >= this.fragments.size() || this.sortFocused < 0) {
+        if (this.fragments.size() <= 0 || this.sortFocused < 0) {
             doExit();
             return;
         }
+        // 焦点在 tab 行尾部入口（历史/收藏）时，返回先回到推荐 tab
+        if (this.sortFocused >= this.fragments.size()) {
+            this.mGridView.setSelection(0);
+            return;
+        }
 
-        BaseLazyFragment baseLazyFragment = this.fragments.get(this.sortFocused);
+        BaseLazyFragment baseLazyFragment = this.sortFocused < this.fragments.size()
+                ? this.fragments.get(this.sortFocused) : null;
         if (baseLazyFragment instanceof GridFragment) {
             GridFragment grid = (GridFragment) baseLazyFragment;
+            // 二级全屏网格先回一级（Hero + tab + 一行货架）
+            if (gridExpanded) {
+                exitToHome();
+                return;
+            }
             // 如果当前 Fragment 能恢复之前保存的 UI 状态，则直接返回
             if (grid.restoreView()) {
                 return;
@@ -646,10 +772,26 @@ public class HomeActivity extends BaseActivity {
             } else {
                 doExit();
             }
-        } else if (baseLazyFragment instanceof UserFragment && UserFragment.tvHotList.canScrollVertically(-1)) {
-            // 如果 UserFragment 列表可以向上滚动，则滚动到顶部
-            UserFragment.tvHotList.scrollToPosition(0);
-            this.mGridView.setSelection(0);
+        } else if (baseLazyFragment instanceof UserFragment) {
+            // 推荐全屏网格（双击展开）先回一级，再谈退出
+            if (gridExpanded) {
+                exitToHome();
+                return;
+            }
+            doExit();
+        } else if (baseLazyFragment instanceof HomeGridPage) {
+            // 观看历史/我的收藏与分类网格同规则：二级先回一级，一级回 tab 行
+            if (gridExpanded) {
+                exitToHome();
+                return;
+            }
+            if (this.sortFocusView != null && !this.sortFocusView.isFocused()) {
+                this.sortFocusView.requestFocus();
+            } else if (this.sortFocused != 0) {
+                this.mGridView.setSelection(0);
+            } else {
+                doExit();
+            }
         } else {
             doExit();
         }
@@ -679,7 +821,6 @@ public class HomeActivity extends BaseActivity {
         mHandler.postDelayed(refreshTopInfoTextSizeRunnable, 350);
         mHandler.removeCallbacks(refreshTopLayoutRunnable);
         mHandler.postDelayed(refreshTopLayoutRunnable, 450);
-        mHandler.post(mRunnable);
     }
 
 
@@ -688,15 +829,13 @@ public class HomeActivity extends BaseActivity {
         super.onPause();
         mHandler.removeCallbacks(refreshTopInfoTextSizeRunnable);
         mHandler.removeCallbacks(refreshTopLayoutRunnable);
-        mHandler.removeCallbacks(mRunnable);
     }
 
     private void refreshTopInfoTextSize() {
-        if (tvName == null || tvDate == null) {
+        if (tvName == null) {
             return;
         }
-        tvName.setTextSize(TypedValue.COMPLEX_UNIT_PX, getResources().getDimension(R.dimen.ts_30));
-        tvDate.setTextSize(TypedValue.COMPLEX_UNIT_PX, getResources().getDimension(R.dimen.ts_26));
+        tvName.setTextSize(TypedValue.COMPLEX_UNIT_PX, getResources().getDimension(R.dimen.ts_22));
     }
 
     @Subscribe(threadMode = ThreadMode.MAIN)
@@ -727,22 +866,183 @@ public class HomeActivity extends BaseActivity {
     private final Runnable mDataRunnable = new Runnable() {
         @Override
         public void run() {
-            if (sortChange) {
-                sortChange = false;
-                BaseLazyFragment baseLazyFragment = fragments.get(sortFocused);
-                if (sortFocused != currentSelected) {
-                    currentSelected = sortFocused;
-                    mViewPager.setCurrentItem(sortFocused, false);
-                    changeTop(sortFocused != 0);
-                    if (baseLazyFragment instanceof GridFragment && ((GridFragment) baseLazyFragment).shouldReloadOnSelect()) {
-                        ((GridFragment) baseLazyFragment).forceRefresh();
+            if (!sortChange) {
+                return;
+            }
+            sortChange = false;
+            // 一级态 tab 预览：只换首页一行货架，不切页不进二级
+            if (!gridExpanded) {
+                if (sortFocused == 0) {
+                    // 回到推荐 tab：恢复首页货架（豆瓣热播/站点推荐）
+                    UserFragment.restoreHomeShelf();
+                    return;
+                }
+                if (sortFocused < fragments.size()
+                        && fragments.get(sortFocused) instanceof HomeGridPage) {
+                    HomeGridPage page = (HomeGridPage) fragments.get(sortFocused);
+                    if (page.isLoad()) {
+                        UserFragment.showSortPreview(page.getGridData());
+                    } else if (page.shouldReloadOnSelect()) {
+                        page.forceRefresh();
                     }
-                } else if (baseLazyFragment instanceof GridFragment && ((GridFragment) baseLazyFragment).shouldReloadOnSelect()) {
-                    ((GridFragment) baseLazyFragment).forceRefresh();
+                }
+                return;
+            }
+            // 二级态：切页 + 数据不完整时刷新
+            if (sortFocused != currentSelected && sortFocused < fragments.size()) {
+                currentSelected = sortFocused;
+                mViewPager.setCurrentItem(sortFocused, false);
+            }
+            // 二级态推荐叠加层/货架同步：离开推荐页物理收起叠加层并隐藏货架，
+            // 回推荐页恢复——杜绝任何切页状态异常下的内容残留
+            if (sortFocused == 0) {
+                UserFragment.showRecGrid();
+            } else {
+                UserFragment.hideRecGrid();
+            }
+            LogWriter.i("tab switch page=" + sortFocused
+                    + " scrollX=" + (mViewPager == null ? -1 : mViewPager.getScrollX()));
+            if (sortFocused >= 0 && sortFocused < fragments.size()
+                    && fragments.get(sortFocused) instanceof HomeGridPage) {
+                HomeGridPage grid = (HomeGridPage) fragments.get(sortFocused);
+                if (grid.shouldReloadOnSelect()) {
+                    grid.forceRefresh();
                 }
             }
         }
     };
+
+    /** 首页货架数据就绪（豆瓣或站点推荐）：解除 enterGrid 门槛。 */
+    public static void notifyHomeDataReady() {
+        final HomeActivity act = instance;
+        if (act != null) {
+            act.pageDataReady = true;
+        }
+    }
+
+    /** 首页网格页数据装载完成：进入二级门槛置位；一级态正预览该页则刷新货架。 */
+    public static void onGridDataLoaded() {
+        final HomeActivity act = instance;
+        if (act == null) {
+            return;
+        }
+        act.mHandler.post(new Runnable() {
+            @Override
+            public void run() {
+                if (!act.pageDataReady) {
+                    act.pageDataReady = true;
+                }
+                if (!act.gridExpanded
+                        && act.sortFocused >= 0 && act.sortFocused < act.fragments.size()
+                        && act.fragments.get(act.sortFocused) instanceof HomeGridPage) {
+                    UserFragment.showSortPreview(((HomeGridPage) act.fragments.get(act.sortFocused)).getGridData());
+                }
+            }
+        });
+    }
+
+    /** 一级列表（下键 / 上滑到底）进入二级全屏网格：切到当前分类页并聚焦。 */
+    public static void enterGrid() {
+        final HomeActivity act = instance;
+        if (act == null || !act.pageDataReady) {
+            return;
+        }
+        act.mHandler.post(new Runnable() {
+            @Override
+            public void run() {
+                if (act.gridExpanded || act.isLoading()
+                        || act.sortFocused >= act.fragments.size()) {
+                    return;
+                }
+                act.gridExpanded = true;
+                act.currentSelected = act.sortFocused;
+                act.mViewPager.setCurrentItem(act.sortFocused, false);
+                act.changeTop(true); // 二级新页面隐藏顶部导航栏
+                act.updateTabAnchor();
+                if (act.fragments.get(act.sortFocused) instanceof UserFragment) {
+                    // 推荐 tab 无独立网格页：展开 UserFragment 内的全屏网格叠加层（不抢焦点）
+                    UserFragment.showRecGrid();
+                }
+                // 二级页焦点先落在 tab 行（当前 tab 选中态）；右键切 tab，下键才进网格
+                act.mGridView.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        if (act.gridExpanded) {
+                            act.mGridView.setSelection(act.sortFocused);
+                            act.mGridView.requestFocus();
+                        }
+                    }
+                });
+            }
+        });
+    }
+
+    /** 二级态：tab 行获焦（当前 tab 选中效果），网格第一行上键回到 tab 行。 */
+    public static void focusTabRow() {
+        final HomeActivity act = instance;
+        if (act == null || !act.gridExpanded) {
+            return;
+        }
+        act.mGridView.post(new Runnable() {
+            @Override
+            public void run() {
+                if (act.gridExpanded) {
+                    act.mGridView.setSelection(act.sortFocused);
+                    act.mGridView.requestFocus();
+                }
+            }
+        });
+    }
+
+    /** 二级态：tab 行下键进入当前 tab 的全屏网格（分类/历史/收藏页或推荐叠加层）。 */
+    public static void enterCurrentGrid() {
+        final HomeActivity act = instance;
+        if (act == null || !act.gridExpanded
+                || act.sortFocused < 0 || act.sortFocused >= act.fragments.size()) {
+            return;
+        }
+        BaseLazyFragment f = act.fragments.get(act.sortFocused);
+        if (f instanceof HomeGridPage) {
+            ((HomeGridPage) f).focusGrid();
+        } else if (f instanceof UserFragment) {
+            UserFragment.focusRecGrid();
+        }
+    }
+
+    /** 二级网格第一行按上键回一级（Hero + tab + 一行货架）。 */
+    public static void exitToHome() {
+        final HomeActivity act = instance;
+        if (act == null) {
+            return;
+        }
+        act.mHandler.post(new Runnable() {
+            @Override
+            public void run() {
+                if (!act.gridExpanded) {
+                    return;
+                }
+                act.gridExpanded = false;
+                act.currentSelected = 0;
+                act.mViewPager.setCurrentItem(0, false);
+                act.changeTop(false); // 回一级恢复顶部导航栏
+                act.updateTabAnchor();
+                UserFragment.hideRecGrid(); // 推荐全屏网格叠加层收起（幂等）
+                // 回一级焦点回 tab 行「推荐」：tab 选中态=焦点态（白字加粗），与进入二级前视觉一致；
+                // setSelection 只改选中位置不产生焦点，聚焦货架会让 tab 全部失焦变灰
+                if (act.mGridView != null) {
+                    act.mGridView.post(new Runnable() {
+                        @Override
+                        public void run() {
+                            if (!act.gridExpanded && act.mGridView != null) {
+                                act.mGridView.setSelection(0);
+                                act.mGridView.requestFocus();
+                            }
+                        }
+                    });
+                }
+            }
+        });
+    }
 
     private long menuKeyDownTime = 0;
     private static final long LONG_PRESS_THRESHOLD = 2000; // 设置长按的阈值，单位是毫秒
@@ -794,10 +1094,10 @@ public class HomeActivity extends BaseActivity {
         });
         if (hide && topHide == 0) {
             animatorSet.playTogether(ObjectAnimator.ofObject(viewObj, "marginTop", new IntEvaluator(),
-                            AutoSizeUtils.mm2px(this.mContext, 10.0f),
+                            0,
                             AutoSizeUtils.mm2px(this.mContext, 0.0f)),
                     ObjectAnimator.ofObject(viewObj, "height", new IntEvaluator(),
-                            AutoSizeUtils.mm2px(this.mContext, 50.0f),
+                            AutoSizeUtils.mm2px(this.mContext, 30.0f),
                             AutoSizeUtils.mm2px(this.mContext, 1.0f)),
                     ObjectAnimator.ofFloat(this.topLayout, "alpha", 1.0f, 0.0f));
             animatorSet.setDuration(200);
@@ -807,20 +1107,30 @@ public class HomeActivity extends BaseActivity {
         if (!hide && topHide == 1) {
             animatorSet.playTogether(ObjectAnimator.ofObject(viewObj, "marginTop", new IntEvaluator(),
                             AutoSizeUtils.mm2px(this.mContext, 0.0f),
-                            AutoSizeUtils.mm2px(this.mContext, 10.0f)),
+                            0),
                     ObjectAnimator.ofObject(viewObj, "height", new IntEvaluator(),
                             AutoSizeUtils.mm2px(this.mContext, 1.0f),
-                            AutoSizeUtils.mm2px(this.mContext, 50.0f)),
+                            AutoSizeUtils.mm2px(this.mContext, 30.0f)),
                     ObjectAnimator.ofFloat(this.topLayout, "alpha", 0.0f, 1.0f));
             animatorSet.setDuration(200);
             animatorSet.start();
         }
     }
 
+    /** 一级态 tab 停在 Hero 底部（300），二级态 tab 吸顶（30）。 */
+    private void updateTabAnchor() {
+        if (mGridView == null) {
+            return;
+        }
+        float target = AutoSizeUtils.mm2px(this.mContext, gridExpanded ? 30.0f : 300.0f);
+        mGridView.animate().translationY(target).setDuration(200).start();
+    }
+
     @Override
     protected void onDestroy() {
         dismissHomeDialogs();
         mHandler.removeCallbacksAndMessages(null);
+        instance = null;
         super.onDestroy();
         unregisterEventBus();
         if (isFinishing()) {
@@ -903,8 +1213,8 @@ public class HomeActivity extends BaseActivity {
         if (!refreshHomeRec) return;
         refreshHomeRec = false;
         if (Hawk.get(HawkConfig.HOME_REC, HawkConfig.DEFAULT_HOME_REC) != 1) return;
-        if (absXml == null || absXml.videoList == null || UserFragment.homeHotVodAdapter == null) return;
-        UserFragment.homeHotVodAdapter.setNewData(absXml.videoList);
+        // 走 UserFragment 统一渲染入口，货架与 Hero 轮播同步刷新
+        UserFragment.renderRecData(absXml);
     }
 
     private void refreshHome(final boolean restart)
@@ -967,7 +1277,9 @@ public class HomeActivity extends BaseActivity {
         showSuccess();
         cancelHomeSortLoading();
         clearHomePages();
-        sortAdapter.setNewData(DefaultConfig.adjustSort(ApiConfig.get().getHomeSourceBean().getKey(), new ArrayList<>(), true));
+        List<MovieSort.SortData> initSort = DefaultConfig.adjustSort(ApiConfig.get().getHomeSourceBean().getKey(), new ArrayList<>(), true);
+        appendNavTabs(initSort);
+        sortAdapter.setNewData(initSort);
         initViewPager(null);
         tvName.clearAnimation();
     }

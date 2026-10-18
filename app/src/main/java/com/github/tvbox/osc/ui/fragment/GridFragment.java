@@ -25,6 +25,7 @@ import com.github.tvbox.osc.bean.Movie;
 import com.github.tvbox.osc.bean.MovieSort;
 import com.github.tvbox.osc.event.RefreshEvent;
 import com.github.tvbox.osc.ui.activity.DetailActivity;
+import com.github.tvbox.osc.ui.activity.HomeActivity;
 import com.github.tvbox.osc.ui.activity.FastSearchActivity;
 import com.github.tvbox.osc.ui.activity.SearchActivity;
 import com.github.tvbox.osc.ui.adapter.GridAdapter;
@@ -58,7 +59,7 @@ import org.json.JSONObject;
  * @date :2020/12/21
  * @description:
  */
-public class GridFragment extends BaseLazyFragment {
+public class GridFragment extends BaseLazyFragment implements HomeGridPage {
     private MovieSort.SortData sortData = null;
     private TvRecyclerView mGridView;
     private SourceViewModel sourceViewModel;
@@ -241,6 +242,8 @@ public class GridFragment extends BaseLazyFragment {
             @Override
             public boolean onInBorderKeyEvent(int direction, View focused) {
                 if (direction == View.FOCUS_UP) {
+                    // 二级全屏网格第一行按上键回 tab 行（焦点停在当前 tab，可右键切换/下键再进网格）
+                    HomeActivity.focusTabRow();
                 }
                 return false;
             }
@@ -397,6 +400,8 @@ public class GridFragment extends BaseLazyFragment {
                         isLoad = true;
                         hasActionItems = hasActionVideo(absXml.movie.videoList);
                         gridAdapter.setNewData(absXml.movie.videoList);
+                        // 首页一级态可能正预览本分类，通知刷新货架
+                        HomeActivity.onGridDataLoaded();
                     } else {
                         hasActionItems = hasActionItems || hasActionVideo(absXml.movie.videoList);
                         gridAdapter.addData(absXml.movie.videoList);
@@ -438,6 +443,27 @@ public class GridFragment extends BaseLazyFragment {
 
     public boolean isLoad() {
         return isLoad || !mGrids.empty(); //如果有缓存页的话也可以认为是加载了数据的
+    }
+
+    /** 首页一级态预览取当前分类数据快照。 */
+    public List<Movie.Video> getGridData() {
+        return gridAdapter == null ? null : gridAdapter.getData();
+    }
+
+    /** 进入二级全屏网格时定位焦点到第一张卡片。 */
+    public void focusGrid() {
+        if (rootView == null) {
+            return;
+        }
+        rootView.post(new Runnable() {
+            @Override
+            public void run() {
+                View grid = rootView.findViewById(R.id.mGridView);
+                if (grid != null) {
+                    grid.requestFocus();
+                }
+            }
+        });
     }
 
     public boolean shouldReloadOnSelect() {

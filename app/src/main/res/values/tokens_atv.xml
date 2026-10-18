@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Apple TV 设计语言基座 tokens。
+     单位统一 mm（AutoSize Subunits.MM，设计宽 1280dp = 1280mm）。 -->
+<resources>
+
+    <!-- 色板 -->
+    <color name="atv_bg">#FF000000</color>
+    <color name="atv_surface">#FF141418</color>
+    <color name="atv_card">#FF1E1E24</color>
+    <color name="atv_card_stroke">#1AFFFFFF</color>
+    <color name="atv_accent">#FF0A84FF</color>
+    <color name="atv_text_primary">#FFFFFFFF</color>
+    <color name="atv_text_secondary">#B3FFFFFF</color>
+    <color name="atv_text_tertiary">#66FFFFFF</color>
+    <color name="atv_scrim_mid">#66000000</color>
+    <color name="atv_scrim_bottom">#F2000000</color>
+
+    <!-- 安全区 -->
+    <dimen name="atv_safe_side">60mm</dimen>
+    <dimen name="atv_safe_top">30mm</dimen>
+    <dimen name="atv_safe_bottom">30mm</dimen>
+
+    <!-- 圆角 -->
+    <dimen name="atv_radius_card">8mm</dimen>
+    <dimen name="atv_radius_hero">12mm</dimen>
+
+    <!-- 海报卡（2:3 竖版，分类页） -->
+    <dimen name="atv_poster_w">200mm</dimen>
+    <dimen name="atv_poster_h">300mm</dimen>
+    <dimen name="atv_poster_gap">20mm</dimen>
+
+    <!-- 首页货架海报（约 4:5 横扁裁切，一屏 7 张） -->
+    <dimen name="atv_home_poster_w">150mm</dimen>
+    <dimen name="atv_home_poster_h">190mm</dimen>
+
+    <!-- Hero 轮播（贴顶铺满） -->
+    <dimen name="atv_hero_h">300mm</dimen>
+
+    <!-- Hero 信息块距屏顶（从顶部锚定：与 tab 行 300mm 同基准，任何屏比都恒在其上方） -->
+    <dimen name="atv_hero_info_top">155mm</dimen>
+
+    <!-- 顶部悬浮导航栏高 -->
+    <dimen name="atv_nav_h">30mm</dimen>
+
+    <!-- 焦点 -->
+    <dimen name="atv_focus_elevation">4mm</dimen>
+
+</resources>

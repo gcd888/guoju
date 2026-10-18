@@ -23,6 +23,7 @@ public class SeriesFlagAdapter extends BaseQuickAdapter<VodInfo.VodSeriesFlag, B
 
     @Override
     protected void convert(BaseViewHolder helper, VodInfo.VodSeriesFlag item) {
+        com.github.tvbox.osc.ui.tv.focus.FocusScaleHelper.bind(helper.itemView);
         TextView tvSeries = helper.getView(R.id.tvSeriesFlag);
         View select = helper.getView(R.id.tvSeriesFlagSelect);
         if (item.selected) {

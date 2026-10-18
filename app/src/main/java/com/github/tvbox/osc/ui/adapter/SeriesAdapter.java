@@ -27,6 +27,7 @@ public class SeriesAdapter extends BaseQuickAdapter<VodInfo.VodSeries, BaseViewH
 
     @Override
     protected void convert(BaseViewHolder helper, VodInfo.VodSeries item) {
+        com.github.tvbox.osc.ui.tv.focus.FocusScaleHelper.bind(helper.itemView);
         TextView tvSeries = helper.getView(R.id.tvSeries);
         if (item.selected) {
             tvSeries.setTextColor(mContext.getResources().getColor(R.color.color_02F8E1));
