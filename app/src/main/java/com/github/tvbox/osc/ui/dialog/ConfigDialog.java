@@ -24,6 +24,7 @@ import com.owen.tvrecyclerview.widget.TvRecyclerView;
 import com.owen.tvrecyclerview.widget.V7LinearLayoutManager;
 
 import org.jetbrains.annotations.NotNull;
+import org.json.JSONObject;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -33,7 +34,7 @@ import java.util.List;
  * 点左列配置拉取判型填中/右列；点中列仓库拉取判型填右列；点右列线路为终端时直接激活，
  * 套娃链接拉取后层级借用右列展示下级。选中态用列内 url 比对（列表重建时节点重新 new，
  * 引用必不等；列内 url 唯一，跨列同 url 不冲突——各 adapter 只比对自己列的数据）；
- * 重开弹窗自动恢复上次选中（会话级 static url，dismiss 后保留，进程重启丢弃）。
+ * 重开弹窗自动恢复上次选中（Hawk 持久化，进程重启后弹窗重开仍恢复）。
  * 每行删除（配置持久删/仓库线路会话删）；长按配置=失效整棵缓存树重拉；返回键直接关闭。
  */
 public class ConfigDialog extends BaseDialog {
@@ -47,10 +48,36 @@ public class ConfigDialog extends BaseDialog {
     private final List<ConfigNodeBean> warehouseNodes = new ArrayList<>();
     private final List<ConfigNodeBean> lineNodes = new ArrayList<>();
 
-    /** 三列选中态（列内 url，会话级：dismiss 不清，进程重启丢弃） */
-    private static String sConfigUrl = "";
-    private static String sWarehouseUrl = "";
-    private static String sLineUrl = "";
+    /** 选中状态（Hawk 持久化，进程重启后弹窗重开仍恢复）。 */
+    private static class Sel {
+        static JSONObject read() {
+            try {
+                return new JSONObject(Hawk.get(HawkConfig.CONFIG_SEL, "{}"));
+            } catch (Throwable th) {
+                return new JSONObject();
+            }
+        }
+
+        static String config() { return read().optString("config", ""); }
+
+        static String warehouse() { return read().optString("warehouse", ""); }
+
+        static String line() { return read().optString("line", ""); }
+
+        static void set(String k, String v) {
+            JSONObject obj = read();
+            try {
+                obj.put(k, v == null ? "" : v);
+            } catch (Throwable ignored) {
+            }
+            Hawk.put(HawkConfig.CONFIG_SEL, obj.toString()); // 存 String：Hawk 取回按默认值 String 走，存 JSONObject 会因类型还原导致取值 CCE 被吞
+        }
+
+        /** 三列选中一次清空。 */
+        static void clear() {
+            Hawk.put(HawkConfig.CONFIG_SEL, new JSONObject().toString());
+        }
+    }
 
     /** 恢复链进行中：填列时据此接力恢复下游选中；用户点击路径一律先置 false 走下游清空语义 */
     private boolean restoring = false;
@@ -158,18 +185,17 @@ public class ConfigDialog extends BaseDialog {
     // ---------------- 打开恢复链 ----------------
 
     /**
-     * 重开弹窗恢复上次选中（会话级）：左列找回选中配置（找不到=配置已被删，清三列选中走空态）
-     * → 拉取填中/右列（ConfigRepo.CACHE 会话缓存命中秒回）→ 中列按 sWarehouseUrl 恢复选中与高亮
-     * → 右列按 sLineUrl 恢复高亮。各步守卫与用户点击路径一致（url 守卫）。
+     * 重开弹窗恢复上次选中（Hawk 持久化）：左列找回选中配置（找不到=配置已被删，清三列选中走空态）
+     * → 拉取填中/右列（ConfigRepo.CACHE 会话缓存命中秒回，进程重启后缓存必 miss 走真实网络拉取）
+     * → 中列按 Sel.warehouse() 恢复选中与高亮 → 右列按 Sel.line() 恢复高亮。各步守卫与用户点击路径一致（url 守卫）。
      */
     private void restoreLastSelection() {
-        if (sConfigUrl.isEmpty()) return;
-        ConfigNodeBean config = findByUrl(configNodes, sConfigUrl);
+        String configUrl = Sel.config();
+        if (configUrl.isEmpty()) return;
+        ConfigNodeBean config = findByUrl(configNodes, configUrl);
         if (config == null) {
-            // 上次选中的配置已被删：清会话选中走空态
-            sConfigUrl = "";
-            sWarehouseUrl = "";
-            sLineUrl = "";
+            // 上次选中的配置已被删：清持久化选中走空态
+            Sel.clear();
             return;
         }
         restoring = true;
@@ -179,17 +205,18 @@ public class ConfigDialog extends BaseDialog {
 
     /** 恢复链第二步：中列找回上次选中仓库；右列已随配置判型填好则直接恢复线路高亮，否则拉取该仓库填右列。 */
     private void restoreWarehouseSelection() {
-        if (sWarehouseUrl.isEmpty()) {
+        String warehouseUrl = Sel.warehouse();
+        if (warehouseUrl.isEmpty()) {
             // 未选过仓库（LINE/TERMINAL 型常见）：右列已随判型填好的仍恢复线路高亮
             if (!lineNodes.isEmpty()) restoreLineSelection();
             restoring = false;
             return;
         }
-        ConfigNodeBean warehouse = findByUrl(warehouseNodes, sWarehouseUrl);
+        ConfigNodeBean warehouse = findByUrl(warehouseNodes, warehouseUrl);
         if (warehouse == null) {
             // 上次选中的仓库已不在：清中右选中
-            sWarehouseUrl = "";
-            sLineUrl = "";
+            Sel.set("warehouse", "");
+            Sel.set("line", "");
             restoring = false;
             return;
         }
@@ -204,11 +231,12 @@ public class ConfigDialog extends BaseDialog {
     /** 恢复链第三步：右列找回上次选中线路并高亮（线路是终端选择态，无需再向下拉取）。 */
     private void restoreLineSelection() {
         restoring = false;
-        if (sLineUrl.isEmpty()) return;
-        if (findByUrl(lineNodes, sLineUrl) != null) {
-            lineAdapter.setSelectedUrl(sLineUrl);
+        String lineUrl = Sel.line();
+        if (lineUrl.isEmpty()) return;
+        if (findByUrl(lineNodes, lineUrl) != null) {
+            lineAdapter.setSelectedUrl(lineUrl);
         } else {
-            sLineUrl = ""; // 上次选中的线路已不在：清选中
+            Sel.set("line", ""); // 上次选中的线路已不在：清选中
         }
     }
 
@@ -218,8 +246,9 @@ public class ConfigDialog extends BaseDialog {
     private void onConfigClicked(final ConfigNodeBean node) {
         if (node == null) return;
         restoring = false;
-        sConfigUrl = safeUrl(node.url);
-        configAdapter.setSelectedUrl(sConfigUrl);
+        String url = safeUrl(node.url);
+        Sel.set("config", url);
+        configAdapter.setSelectedUrl(url);
         fetchConfigIntoColumns(node);
     }
 
@@ -228,8 +257,9 @@ public class ConfigDialog extends BaseDialog {
         if (node == null) return true;
         if (node.type != ConfigNodeBean.TYPE_CONFIG) return true; // 长按刷新仅配置级
         restoring = false;
-        sConfigUrl = safeUrl(node.url); // 长按视为选中：高亮与刷新内容一致
-        configAdapter.setSelectedUrl(sConfigUrl);
+        String url = safeUrl(node.url); // 长按视为选中：高亮与刷新内容一致
+        Sel.set("config", url);
+        configAdapter.setSelectedUrl(url);
         ConfigRepo.invalidateTree(node.url);
         fetchConfigIntoColumns(node);
         return true;
@@ -242,7 +272,7 @@ public class ConfigDialog extends BaseDialog {
             @Override
             public void onSuccess(ConfigRepo.FetchResult result) {
                 if (!isShowing()) return;
-                if (node.url == null || !node.url.equals(sConfigUrl)) return; // 用户已点别的条目，旧响应作废
+                if (node.url == null || !node.url.equals(Sel.config())) return; // 用户已点别的条目，旧响应作废
                 fillColumnsByConfigType(result, node);
             }
 
@@ -261,8 +291,8 @@ public class ConfigDialog extends BaseDialog {
         ConfigNodeBean reuseWarehouse = findVirtualByUrl(warehouseNodes, config.url);
         ConfigNodeBean reuseLine = findVirtualByUrl(lineNodes, config.url);
         if (!restoring) { // 用户点击：下游选中 url 同步清空，随列重建失效
-            sWarehouseUrl = "";
-            sLineUrl = "";
+            Sel.set("warehouse", "");
+            Sel.set("line", "");
             warehouseAdapter.setSelectedUrl("");
             lineAdapter.setSelectedUrl("");
         }
@@ -296,8 +326,9 @@ public class ConfigDialog extends BaseDialog {
     private void onWarehouseClicked(final ConfigNodeBean node) {
         if (node == null) return;
         restoring = false;
-        sWarehouseUrl = safeUrl(node.url);
-        warehouseAdapter.setSelectedUrl(sWarehouseUrl);
+        String url = safeUrl(node.url);
+        Sel.set("warehouse", url);
+        warehouseAdapter.setSelectedUrl(url);
         fetchWarehouseIntoRight(node);
     }
 
@@ -308,7 +339,7 @@ public class ConfigDialog extends BaseDialog {
             @Override
             public void onSuccess(ConfigRepo.FetchResult result) {
                 if (!isShowing()) return;
-                if (node.url == null || !node.url.equals(sWarehouseUrl)) return; // 用户已点别的条目，旧响应作废
+                if (node.url == null || !node.url.equals(Sel.warehouse())) return; // 用户已点别的条目，旧响应作废
                 fillRightByWarehouseType(result, node);
             }
 
@@ -325,7 +356,7 @@ public class ConfigDialog extends BaseDialog {
     private void fillRightByWarehouseType(ConfigRepo.FetchResult result, ConfigNodeBean warehouse) {
         ConfigNodeBean reuseLine = findVirtualByUrl(lineNodes, warehouse.url);
         if (!restoring) { // 用户点击：右列选中 url 同步清空，随列重建失效
-            sLineUrl = "";
+            Sel.set("line", "");
             lineAdapter.setSelectedUrl("");
         }
         lineNodes.clear();
@@ -350,8 +381,9 @@ public class ConfigDialog extends BaseDialog {
     private void onLineClicked(final ConfigNodeBean node) {
         if (node == null) return;
         restoring = false;
-        sLineUrl = safeUrl(node.url);
-        lineAdapter.setSelectedUrl(sLineUrl);
+        String url = safeUrl(node.url);
+        Sel.set("line", url);
+        lineAdapter.setSelectedUrl(url);
         if (node.type == ConfigNodeBean.TYPE_TERMINAL) {
             applyLine(node); // 终端节点直接激活（真实 name/url）
             return;
@@ -361,13 +393,13 @@ public class ConfigDialog extends BaseDialog {
             @Override
             public void onSuccess(ConfigRepo.FetchResult result) {
                 if (!isShowing()) return;
-                if (node.url == null || !node.url.equals(sLineUrl)) return; // 用户已点别的条目，旧响应作废
+                if (node.url == null || !node.url.equals(Sel.line())) return; // 用户已点别的条目，旧响应作废
                 if (result.type == ConfigNodeBean.TYPE_TERMINAL) {
                     applyLine(node); // 内容即终端配置：用真实 name/url 激活，不再换层
                     return;
                 }
                 // 层级借用右列：LINE=线路列表 / WAREHOUSE=仓列表，选中随列重建失效
-                sLineUrl = "";
+                Sel.set("line", "");
                 lineAdapter.setSelectedUrl("");
                 lineNodes.clear();
                 lineNodes.addAll(result.nodes);
@@ -412,11 +444,13 @@ public class ConfigDialog extends BaseDialog {
                 }
                 // 重建左列（按 url 保留幸存的选中）并清空中/右列；
                 // 删的正是选中项时选中首位（列表非空，中右列已清空无需重拉）
-                boolean wasSelected = node.url != null && node.url.equals(sConfigUrl);
-                rebuildConfigColumn(wasSelected ? null : sConfigUrl);
+                String configUrl = Sel.config();
+                boolean wasSelected = node.url != null && node.url.equals(configUrl);
+                rebuildConfigColumn(wasSelected ? null : configUrl);
                 if (wasSelected && !configNodes.isEmpty()) {
-                    sConfigUrl = safeUrl(configNodes.get(0).url);
-                    configAdapter.setSelectedUrl(sConfigUrl);
+                    String firstUrl = safeUrl(configNodes.get(0).url);
+                    Sel.set("config", firstUrl);
+                    configAdapter.setSelectedUrl(firstUrl);
                 }
             }
         });
@@ -428,25 +462,25 @@ public class ConfigDialog extends BaseDialog {
         for (ConfigItem item : ConfigRepo.getConfigList()) {
             configNodes.add(new ConfigNodeBean(item.name, item.url, ConfigNodeBean.TYPE_CONFIG, false));
         }
-        sConfigUrl = "";
+        Sel.set("config", "");
         if (keepUrl != null) {
             for (ConfigNodeBean node : configNodes) {
                 if (node.url != null && node.url.equals(keepUrl)) {
-                    sConfigUrl = node.url;
+                    Sel.set("config", node.url);
                     break;
                 }
             }
         }
         configAdapter.setNewData(configNodes);
-        configAdapter.setSelectedUrl(sConfigUrl);
+        configAdapter.setSelectedUrl(Sel.config());
         clearMiddleAndRight();
         updateTip();
     }
 
     /** 清空中/右列及其选中态（删配置/推送后的下游复位）。 */
     private void clearMiddleAndRight() {
-        sWarehouseUrl = "";
-        sLineUrl = "";
+        Sel.set("warehouse", "");
+        Sel.set("line", "");
         warehouseAdapter.setSelectedUrl("");
         lineAdapter.setSelectedUrl("");
         warehouseNodes.clear();
@@ -463,7 +497,7 @@ public class ConfigDialog extends BaseDialog {
             public void run() {
                 ConfigRepo.sessionRemove(node.url);
                 removeByRef(warehouseNodes, node);
-                if (node.url != null && node.url.equals(sWarehouseUrl)) sWarehouseUrl = ""; // 删的正是选中项
+                if (node.url != null && node.url.equals(Sel.warehouse())) Sel.set("warehouse", ""); // 删的正是选中项
                 warehouseAdapter.notifyDataSetChanged();
                 clearRightColumn();
             }
@@ -478,7 +512,7 @@ public class ConfigDialog extends BaseDialog {
             public void run() {
                 ConfigRepo.sessionRemove(node.url);
                 removeByRef(lineNodes, node);
-                if (node.url != null && node.url.equals(sLineUrl)) sLineUrl = ""; // 删的正是选中项
+                if (node.url != null && node.url.equals(Sel.line())) Sel.set("line", ""); // 删的正是选中项
                 lineAdapter.notifyDataSetChanged();
                 updateTip();
             }
@@ -487,7 +521,7 @@ public class ConfigDialog extends BaseDialog {
 
     /** 清空右列及选中态（删仓库后的下游复位）。 */
     private void clearRightColumn() {
-        sLineUrl = "";
+        Sel.set("line", "");
         lineAdapter.setSelectedUrl("");
         lineNodes.clear();
         lineAdapter.setNewData(lineNodes);

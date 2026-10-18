@@ -68,5 +68,6 @@ public class HawkConfig {
     public static final String DANMU_API = "danmu_api";
     public static final String CONFIG_LIST = "config_list"; // 配置弹窗推送配置列表 [{name,url}]
     public static final String CONFIG_ACTIVE = "config_active"; // 当前生效线路 url（弹窗✓回显）
+    public static final String CONFIG_SEL = "config_sel"; // 配置弹窗三列选中状态包 {config,warehouse,line}
     public static boolean hotVodDelete;
 }
