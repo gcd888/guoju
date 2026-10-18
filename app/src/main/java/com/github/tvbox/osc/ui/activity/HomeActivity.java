@@ -361,8 +361,8 @@ public class HomeActivity extends BaseActivity {
                 } else if (id == R.id.navSearch) {
                     jumpActivity(SearchActivity.class);
                 } else if (id == R.id.navPush) {
-                    // 多仓推送对话框（推送链接 > 仓 > 接口）
-                    new com.github.tvbox.osc.ui.dialog.WarehouseDialog(HomeActivity.this).show();
+                    // 配置对话框（多仓/接口配置）
+                    new com.github.tvbox.osc.ui.dialog.ConfigDialog(HomeActivity.this).show();
                 } else if (id == R.id.navSetting) {
                     jumpActivity(SettingActivity.class);
                 }
