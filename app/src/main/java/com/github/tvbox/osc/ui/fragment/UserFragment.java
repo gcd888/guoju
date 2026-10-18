@@ -165,8 +165,10 @@ public class UserFragment extends BaseLazyFragment {
                 tvDesc.setVisibility(View.GONE);
             }
             LogWriter.i("hero bind[" + position + "] " + item.name + " meta=[" + meta + "] descLen=" + desc.length());
-            // 点击/确认键：豆瓣条目走快速搜索进详情
-            itemView.setOnClickListener(v -> jumpDoubanDetail(item));
+            // 片名获/失焦：同步轮播暂停态（焦点停在片名上轮播停住，移出 Hero 恢复）
+            tvTitle.setOnFocusChangeListener((v, hasFocus) -> heroBanner.refreshFocusPause());
+            // 仅片名可点击（遥控 OK 键）：跳转搜索页并携带剧名自动搜索；整图不再响应点击
+            tvTitle.setOnClickListener(v -> jumpSearch(item));
         }
     };
 
@@ -248,15 +250,6 @@ public class UserFragment extends BaseLazyFragment {
         newIntent.putExtra("title", vod.name);
         newIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
         mActivity.startActivity(newIntent);
-    }
-
-    /** 打开豆瓣/无站源条目：未配接口给提示，已配接口走快速搜索（结果页选站源进详情）。 */
-    private void jumpDoubanDetail(Movie.Video vod) {
-        if (ApiConfig.get().getSourceBeanList().isEmpty()) {
-            Toast.makeText(mContext, "请先在设置中配置接口", Toast.LENGTH_SHORT).show();
-            return;
-        }
-        jumpSearch(vod);
     }
 
     @Override

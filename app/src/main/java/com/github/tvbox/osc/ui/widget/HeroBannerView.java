@@ -97,13 +97,9 @@ public class HeroBannerView extends FrameLayout {
             // 双层各自可获焦，焦点在两层间跳动会先后触发两个回调——用整体状态判断，
             // 避免 paused 依赖回调顺序在 true/false 间翻转（曾致节律错乱）。
             layers[layerIndex].setOnFocusChangeListener((v, hasFocus) -> {
-                boolean paused = HeroBannerView.this.hasFocus();
                 com.github.tvbox.osc.util.LogWriter.i(logTag + " focus layer=" + layerIndex
-                        + " hasFocus=" + hasFocus + " -> paused=" + paused);
-                if (focusPaused != paused) {
-                    focusPaused = paused;
-                    restartAutoSwitch();
-                }
+                        + " hasFocus=" + hasFocus);
+                applyFocusPause();
             });
             addView(layers[i]);
         }
@@ -111,6 +107,9 @@ public class HeroBannerView extends FrameLayout {
         layers[0].setAlpha(1f);
         if (layers[1] != null) {
             layers[1].setAlpha(0f);
+            // 隐藏层不可获焦：两层几何完全叠放，若隐藏层可获焦，焦点搜索可能命中
+            // 隐藏层上的片名（焦点高亮不可见、绑定数据陈旧），故随可见性切换焦点开关
+            setLayerFocusable(layers[1], false);
         }
         preloadNext(0);
         restartAutoSwitch();
@@ -174,6 +173,32 @@ public class HeroBannerView extends FrameLayout {
         return autoScrollEnabled && !focusPaused && isAttachedToWindow();
     }
 
+    /** 按 Hero 整体（含片名等子 view）是否持有焦点重算暂停态；各焦点回调统一走此判定。 */
+    private void applyFocusPause() {
+        boolean paused = hasFocus();
+        if (focusPaused != paused) {
+            com.github.tvbox.osc.util.LogWriter.i(logTag + " paused=" + paused);
+            focusPaused = paused;
+            restartAutoSwitch();
+        }
+    }
+
+    /**
+     * 供条目内子 view（片名）焦点变化时同步暂停态：
+     * 子 view 获/失焦不改变层自身的焦点状态，层监听感知不到，须由 binder 显式调用。
+     */
+    public void refreshFocusPause() {
+        applyFocusPause();
+    }
+
+    /** 隐藏层整体退出焦点搜索（自身不可获焦 + 阻断子 view），可见层恢复默认（子 view 优先）。 */
+    private void setLayerFocusable(View layer, boolean focusable) {
+        layer.setFocusable(focusable);
+        // 层根为 inflate 出的 FrameLayout，必为 ViewGroup
+        ((ViewGroup) layer).setDescendantFocusability(focusable
+                ? ViewGroup.FOCUS_AFTER_DESCENDANTS : ViewGroup.FOCUS_BLOCK_DESCENDANTS);
+    }
+
     private void restartAutoSwitch() {
         com.github.tvbox.osc.util.LogWriter.i(logTag + " restart active=" + isSwitchActive()
                 + " count=" + itemCount + " at=" + android.os.SystemClock.uptimeMillis());
@@ -200,6 +225,9 @@ public class HeroBannerView extends FrameLayout {
         int nextLayer = 1 - activeLayer;
         View outgoing = layers[activeLayer];
         binder.onBind(layers[nextLayer], items.get(nextPos), nextPos);
+        // 焦点开关随可见层切换：新层先放开（绑定完成后才可获焦），旧层立即封焦
+        setLayerFocusable(layers[nextLayer], true);
+        setLayerFocusable(outgoing, false);
         layers[nextLayer].setAlpha(0f);
         layers[nextLayer].animate().alpha(1f).setDuration(CROSSFADE_DURATION_MS).start();
         // 关键修复：旧层必须同步淡出。此前旧层 alpha 恒为 1，当旧层恰在上层（z 序）时
