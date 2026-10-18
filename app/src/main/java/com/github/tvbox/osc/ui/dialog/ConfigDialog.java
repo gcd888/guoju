@@ -10,7 +10,6 @@ import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 
-import com.chad.library.adapter.base.BaseQuickAdapter;
 import com.github.tvbox.osc.R;
 import com.github.tvbox.osc.api.ConfigRepo;
 import com.github.tvbox.osc.bean.ConfigItem;
@@ -30,47 +29,56 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * 配置弹窗：配置 > 仓库 > 线路 三级钻取。
- * 每行删除按钮（配置级持久删、仓库/线路级会话删）；长按配置=刷新整棵资源树；
- * 线路激活走 API_URL + clearRuntimeCache + 重启首页现有链路。
+ * 配置弹窗（Finder 三栏式）：左=配置 / 中=仓库 / 右=线路，三列联动列表。
+ * 点左列配置拉取判型填中/右列；点中列仓库拉取判型填右列；点右列线路为终端时直接激活，
+ * 套娃链接拉取后层级借用右列展示下级。勾选态用节点引用比对（虚拟节点与上级同 url）；
+ * 每行删除（配置持久删/仓库线路会话删）；长按配置=失效整棵缓存树重拉；返回键直接关闭。
  */
 public class ConfigDialog extends BaseDialog {
 
-    private final ConfigAdapter adapter = new ConfigAdapter();
-    /** 层级路径上下文：面包屑展示与返回回退 */
-    private final List<String> breadcrumb = new ArrayList<>();
-    /** 层栈：栈顶为当前展示层（0=配置/1=仓库/2=线路，层级由节点判型决定） */
-    private final List<Level> stack = new ArrayList<>();
-    private TextView tvBreadcrumb;
+    private final ConfigAdapter configAdapter = new ConfigAdapter();
+    private final ConfigAdapter warehouseAdapter = new ConfigAdapter();
+    private final ConfigAdapter lineAdapter = new ConfigAdapter();
+
+    /** 三列数据（三栏并列展示层级，无层级栈） */
+    private final List<ConfigNodeBean> configNodes = new ArrayList<>();
+    private final List<ConfigNodeBean> warehouseNodes = new ArrayList<>();
+    private final List<ConfigNodeBean> lineNodes = new ArrayList<>();
+
+    /** 三列勾选态（节点对象引用；列数据被替换时置空，不能用 url 比对——虚拟节点与上级同 url） */
+    private ConfigNodeBean selectedConfig;
+    private ConfigNodeBean selectedWarehouse;
+    private ConfigNodeBean selectedLine;
+
     private TextView tvTip;
     private EditText etName;
     private EditText etUrl;
-
-    private static class Level {
-        List<ConfigNodeBean> nodes = new ArrayList<>();
-        /** 本层压入时向面包屑添加的条数（虚拟补层为 2：本级名+虚拟仓库名），返回时同步回退 */
-        int crumbs;
-    }
 
     public ConfigDialog(@NonNull @NotNull Context context) {
         super(context);
         setContentView(R.layout.dialog_config);
         setCanceledOnTouchOutside(false);
 
-        tvBreadcrumb = findViewById(R.id.tvBreadcrumb);
         tvTip = findViewById(R.id.tvTip);
         etName = findViewById(R.id.etName);
         etUrl = findViewById(R.id.etUrl);
-        TvRecyclerView rvConfig = findViewById(R.id.rvConfig);
-        rvConfig.setLayoutManager(new V7LinearLayoutManager(getContext(), V7LinearLayoutManager.VERTICAL, false));
-        rvConfig.setAdapter(adapter);
 
-        adapter.setOnItemClickListener((a, view, position) -> onItemClicked(adapter.getItem(position)));
-        adapter.setOnItemLongClickListener((a, view, position) -> onItemLongClicked(adapter.getItem(position)));
-        adapter.setOnItemChildClickListener((a, view, position) -> {
-            if (view.getId() == R.id.ivDelete) {
-                onDeleteClicked(adapter.getItem(position));
-            }
+        initColumn(findViewById(R.id.rvConfig), configAdapter);
+        initColumn(findViewById(R.id.rvWarehouse), warehouseAdapter);
+        initColumn(findViewById(R.id.rvLine), lineAdapter);
+
+        configAdapter.setOnItemClickListener((a, view, position) -> onConfigClicked(configAdapter.getItem(position)));
+        configAdapter.setOnItemLongClickListener((a, view, position) -> onConfigLongClicked(configAdapter.getItem(position)));
+        configAdapter.setOnItemChildClickListener((a, view, position) -> {
+            if (view.getId() == R.id.ivDelete) onDeleteConfig(configAdapter.getItem(position));
+        });
+        warehouseAdapter.setOnItemClickListener((a, view, position) -> onWarehouseClicked(warehouseAdapter.getItem(position)));
+        warehouseAdapter.setOnItemChildClickListener((a, view, position) -> {
+            if (view.getId() == R.id.ivDelete) onDeleteWarehouse(warehouseAdapter.getItem(position));
+        });
+        lineAdapter.setOnItemClickListener((a, view, position) -> onLineClicked(lineAdapter.getItem(position)));
+        lineAdapter.setOnItemChildClickListener((a, view, position) -> {
+            if (view.getId() == R.id.ivDelete) onDeleteLine(lineAdapter.getItem(position));
         });
 
         findViewById(R.id.ivClose).setOnClickListener(v -> dismiss());
@@ -78,110 +86,73 @@ public class ConfigDialog extends BaseDialog {
         findViewById(R.id.btnConfirm).setOnClickListener(v -> onConfirmClicked());
 
         ConfigRepo.resetSession();
-        Level root = new Level();
-        root.nodes.addAll(buildConfigNodes());
-        stack.add(root);
-        refreshUi();
-    }
-
-    // ---------------- 层级渲染 ----------------
-
-    private List<ConfigNodeBean> buildConfigNodes() {
-        List<ConfigNodeBean> nodes = new ArrayList<>();
         for (ConfigItem item : ConfigRepo.getConfigList()) {
-            nodes.add(new ConfigNodeBean(item.name, item.url, ConfigNodeBean.TYPE_CONFIG, false));
+            configNodes.add(new ConfigNodeBean(item.name, item.url, ConfigNodeBean.TYPE_CONFIG, false));
         }
-        return nodes;
+        configAdapter.setNewData(configNodes);
+        // 生效✓三列各自比对展示（切换源/删除生效源均会关闭弹窗，无需动态刷新）
+        String activeUrl = ConfigRepo.getActiveUrl();
+        configAdapter.setCurrentUrl(activeUrl);
+        warehouseAdapter.setCurrentUrl(activeUrl);
+        lineAdapter.setCurrentUrl(activeUrl);
+        updateTip();
     }
 
-    /** 压入新层并记录其贡献的面包屑条数（crumb 传 null 跳过），保证返回回退同步。 */
-    private void pushLevel(Level level, String... crumbs) {
-        int added = 0;
-        for (String crumb : crumbs) {
-            if (crumb != null) {
-                breadcrumb.add(crumb);
-                added++;
-            }
-        }
-        level.crumbs = added;
-        stack.add(level);
-        refreshUi();
+    /** 初始化单列列表（布局 + 适配器；点击/长按/删除由各列单独挂接）。 */
+    private void initColumn(TvRecyclerView rv, ConfigAdapter adapter) {
+        rv.setLayoutManager(new V7LinearLayoutManager(getContext(), V7LinearLayoutManager.VERTICAL, false));
+        rv.setAdapter(adapter);
     }
 
-    private void refreshUi() {
-        Level top = stack.get(stack.size() - 1);
-        adapter.setNewData(top.nodes);
-        adapter.setCurrentUrl(ConfigRepo.getActiveUrl());
-        tvBreadcrumb.setText(joinBreadcrumb());
-        tvTip.setText(top.nodes.isEmpty() ? "暂无条目，在下方输入链接推送" : "共 " + top.nodes.size() + " 条");
-    }
+    // ---------------- 三列勾选与状态 ----------------
 
-    private String joinBreadcrumb() {
-        StringBuilder sb = new StringBuilder();
-        for (int i = 0; i < breadcrumb.size(); i++) {
-            if (i > 0) sb.append(" > ");
-            sb.append(breadcrumb.get(i));
-        }
-        return sb.toString();
-    }
-
-    private void backLevel() {
-        if (stack.size() <= 1) {
-            dismiss();
+    /** 状态栏：三列条数概览；配置为空时提示推送入口。 */
+    private void updateTip() {
+        if (configNodes.isEmpty()) {
+            tvTip.setText("暂无配置，在下方输入链接推送");
             return;
         }
-        Level top = stack.remove(stack.size() - 1);
-        for (int i = 0; i < top.crumbs && !breadcrumb.isEmpty(); i++) {
-            breadcrumb.remove(breadcrumb.size() - 1);
+        tvTip.setText("配置 " + configNodes.size() + " · 仓库 " + warehouseNodes.size() + " · 线路 " + lineNodes.size());
+    }
+
+    /** 按对象引用移除（url 相同的虚拟/真实节点不可用 equals 移除）。 */
+    private static boolean removeByRef(List<ConfigNodeBean> list, ConfigNodeBean node) {
+        for (int i = 0; i < list.size(); i++) {
+            if (list.get(i) == node) {
+                list.remove(i);
+                return true;
+            }
         }
-        refreshUi();
+        return false;
     }
 
-    /** 回退到根（配置级）并清空面包屑，供长按刷新/删除/新增后重钻。 */
-    private void popToRoot() {
-        while (stack.size() > 1) {
-            stack.remove(stack.size() - 1);
-            if (!breadcrumb.isEmpty()) breadcrumb.remove(breadcrumb.size() - 1);
-        }
-        breadcrumb.clear();
-    }
+    // ---------------- 左列：配置 ----------------
 
-    /** 用最新持久配置列表原地重建根层（避免 showConfigLevel 重复压栈）。 */
-    private void rebuildRootLevel() {
-        popToRoot();
-        Level root = stack.get(0);
-        root.nodes.clear();
-        root.nodes.addAll(buildConfigNodes());
-        refreshUi();
-    }
-
-    @Override
-    public boolean onKeyDown(int keyCode, KeyEvent event) {
-        if (keyCode == KeyEvent.KEYCODE_BACK) {
-            backLevel();
-            return true;
-        }
-        return super.onKeyDown(keyCode, event);
-    }
-
-    // ---------------- 条目行为 ----------------
-
-    private void onItemClicked(ConfigNodeBean node) {
+    /** 点左列配置：勾选 + 拉取判型填中/右列。 */
+    private void onConfigClicked(final ConfigNodeBean node) {
         if (node == null) return;
-        if (node.type == ConfigNodeBean.TYPE_TERMINAL) {
-            applyLine(node); // 终端节点直接激活
-        } else {
-            fetchAndEnter(node); // 配置/仓库/线路均拉取判型决定下一层
-        }
+        selectedConfig = node;
+        configAdapter.setSelected(node);
+        fetchConfigIntoColumns(node);
     }
 
-    private void fetchAndEnter(final ConfigNodeBean node) {
+    /** 长按左列配置：失效整棵缓存树（含恢复该树会话删除）并重新拉取填列。 */
+    private boolean onConfigLongClicked(ConfigNodeBean node) {
+        if (node == null) return true;
+        if (node.type != ConfigNodeBean.TYPE_CONFIG) return true; // 长按刷新仅配置级
+        ConfigRepo.invalidateTree(node.url);
+        fetchConfigIntoColumns(node);
+        return true;
+    }
+
+    /** 拉取配置并按判型填充中/右列（WAREHOUSE=仓列表 / LINE=虚拟仓库+真实线路 / TERMINAL=虚拟仓库+虚拟线路）。 */
+    private void fetchConfigIntoColumns(final ConfigNodeBean node) {
         tvTip.setText("正在拉取…");
         ConfigRepo.fetchNode(node.url, new ConfigRepo.NodeCallback() {
             @Override
             public void onSuccess(ConfigRepo.FetchResult result) {
                 if (!isShowing()) return;
-                enterByType(result, node);
+                fillColumnsByConfigType(result, node);
             }
 
             @Override
@@ -193,88 +164,118 @@ public class ConfigDialog extends BaseDialog {
         });
     }
 
-    /**
-     * 按（被点节点类型, 判型结果）分派进入下一层，缺失层级补虚拟节点保证三级完整。
-     * node 为 null 时视为配置级（兼容旧调用）。
-     */
-    private void enterByType(ConfigRepo.FetchResult result, ConfigNodeBean node) {
-        int nodeType = node == null ? ConfigNodeBean.TYPE_CONFIG : node.type;
-        String crumb = node == null ? null : node.name;
-        String url = node == null ? "" : node.url;
-        switch (nodeType) {
-            case ConfigNodeBean.TYPE_LINE:
-                if (result.type == ConfigNodeBean.TYPE_TERMINAL) {
-                    applyLine(node); // 线路条目判型即终端：用真实名直接激活，不再压虚拟层
-                    return;
-                }
-                // 线路下钻：LINE 语义不变 / WAREHOUSE 加深为仓列表，均以真实名记账
-                pushLevel(buildLevel(result), crumb);
-                return;
-            case ConfigNodeBean.TYPE_WAREHOUSE:
-                if (result.type == ConfigNodeBean.TYPE_TERMINAL) {
-                    // 仓库下挂单终端：补虚拟线路即可激活，面包屑只记真实仓名
-                    Level level = new Level();
-                    level.nodes.add(new ConfigNodeBean(ConfigRepo.genVirtualName("自定义线路"), url,
-                            ConfigNodeBean.TYPE_TERMINAL, true));
-                    pushLevel(level, crumb);
-                    return;
-                }
-                // LINE → 线路层；WAREHOUSE → 仓库套娃仓列表，均不加虚拟仓库
-                pushLevel(buildLevel(result), crumb);
-                return;
-            default: // TYPE_CONFIG
-                if (result.type == ConfigNodeBean.TYPE_LINE) {
-                    // urls 型线路列表：缺仓库层 → 面包屑补「配置名 > 虚拟仓库名」
-                    pushLevel(buildLevel(result), crumb, ConfigRepo.genVirtualName("自定义仓库"));
-                } else if (result.type == ConfigNodeBean.TYPE_TERMINAL) {
-                    // 补虚拟仓库 + 单条虚拟线路（url=配置自身，可激活）
-                    Level level = new Level();
-                    level.nodes.add(new ConfigNodeBean(ConfigRepo.genVirtualName("自定义线路"), url,
-                            ConfigNodeBean.TYPE_TERMINAL, true));
-                    pushLevel(level, crumb, ConfigRepo.genVirtualName("自定义仓库"));
-                } else {
-                    // 仓库列表：以真实配置名加深面包屑
-                    pushLevel(buildLevel(result), crumb);
-                }
-        }
-    }
-
-    /** 用判型结果（真实 json 名称节点）构建新层。 */
-    private Level buildLevel(ConfigRepo.FetchResult result) {
-        Level level = new Level();
-        level.nodes.addAll(result.nodes);
-        return level;
-    }
-
-    private boolean onItemLongClicked(ConfigNodeBean node) {
-        if (node == null) return true;
-        if (node.type != ConfigNodeBean.TYPE_CONFIG) {
-            return true; // 长按刷新仅配置级
-        }
-        ConfigRepo.invalidateTree(node.url); // 整棵资源树缓存失效（含已缓存的下级节点）
-        popToRoot();
-        fetchAndEnter(node); // 重钻该配置
-        return true;
-    }
-
-    private void onDeleteClicked(final ConfigNodeBean node) {
-        if (node == null) return;
-        if (node.type == ConfigNodeBean.TYPE_CONFIG) {
-            deleteConfig(node);
+    /** 配置判型结果填列：左列不动，中/右列整体重建，下游勾选态随之清空。 */
+    private void fillColumnsByConfigType(ConfigRepo.FetchResult result, ConfigNodeBean config) {
+        selectedWarehouse = null;
+        selectedLine = null;
+        warehouseAdapter.setSelected(null);
+        lineAdapter.setSelected(null);
+        warehouseNodes.clear();
+        lineNodes.clear();
+        if (result.type == ConfigNodeBean.TYPE_WAREHOUSE) {
+            // 中列=真实仓列表，右列清空
+            warehouseNodes.addAll(result.nodes);
         } else {
-            // 仓库/线路级：会话内移除（无持久拉黑，刷新/重进弹窗恢复）
-            confirmDelete("从列表移除「" + node.name + "」？（刷新后恢复）", new Runnable() {
-                @Override
-                public void run() {
-                    ConfigRepo.sessionRemove(node.url);
-                    stack.get(stack.size() - 1).nodes.remove(node);
-                    refreshUi();
-                }
-            });
+            // LINE/TERMINAL 均缺仓库层：补单条虚拟仓库（url=配置 url，点它即重拉配置）
+            warehouseNodes.add(new ConfigNodeBean(ConfigRepo.genVirtualName("自定义仓库"),
+                    config.url, ConfigNodeBean.TYPE_WAREHOUSE, true));
+            if (result.type == ConfigNodeBean.TYPE_LINE) {
+                lineNodes.addAll(result.nodes); // 右列=真实线路列表
+            } else { // TERMINAL：右列单条虚拟线路（url=配置 url，可激活）
+                lineNodes.add(new ConfigNodeBean(ConfigRepo.genVirtualName("自定义线路"),
+                        config.url, ConfigNodeBean.TYPE_TERMINAL, true));
+            }
         }
+        warehouseAdapter.setNewData(warehouseNodes);
+        lineAdapter.setNewData(lineNodes);
+        updateTip();
     }
 
-    private void deleteConfig(final ConfigNodeBean node) {
+    // ---------------- 中列：仓库 ----------------
+
+    /** 点中列仓库：勾选 + 拉取判型填右列。 */
+    private void onWarehouseClicked(final ConfigNodeBean node) {
+        if (node == null) return;
+        selectedWarehouse = node;
+        warehouseAdapter.setSelected(node);
+        tvTip.setText("正在拉取…");
+        ConfigRepo.fetchNode(node.url, new ConfigRepo.NodeCallback() {
+            @Override
+            public void onSuccess(ConfigRepo.FetchResult result) {
+                if (!isShowing()) return;
+                fillRightByWarehouseType(result, node);
+            }
+
+            @Override
+            public void onError(String msg) {
+                if (!isShowing()) return;
+                tvTip.setText(msg);
+                Toast.makeText(getContext(), msg, Toast.LENGTH_SHORT).show();
+            }
+        });
+    }
+
+    /** 仓库判型结果填右列：LINE=真实线路 / WAREHOUSE=套娃仓列表借用右列 / TERMINAL=单条虚拟线路。 */
+    private void fillRightByWarehouseType(ConfigRepo.FetchResult result, ConfigNodeBean warehouse) {
+        selectedLine = null;
+        lineAdapter.setSelected(null);
+        lineNodes.clear();
+        if (result.type == ConfigNodeBean.TYPE_TERMINAL) {
+            // 仓库下挂单终端：补虚拟线路（url=仓库 url）即可激活
+            lineNodes.add(new ConfigNodeBean(ConfigRepo.genVirtualName("自定义线路"),
+                    warehouse.url, ConfigNodeBean.TYPE_TERMINAL, true));
+        } else {
+            lineNodes.addAll(result.nodes);
+        }
+        lineAdapter.setNewData(lineNodes);
+        updateTip();
+    }
+
+    // ---------------- 右列：线路 ----------------
+
+    /**
+     * 点右列线路：终端（虚拟/判型即终端）直接激活；套娃链接拉取后层级借用右列展示下级。
+     */
+    private void onLineClicked(final ConfigNodeBean node) {
+        if (node == null) return;
+        selectedLine = node;
+        lineAdapter.setSelected(node);
+        if (node.type == ConfigNodeBean.TYPE_TERMINAL) {
+            applyLine(node); // 终端节点直接激活（真实 name/url）
+            return;
+        }
+        tvTip.setText("正在拉取…");
+        ConfigRepo.fetchNode(node.url, new ConfigRepo.NodeCallback() {
+            @Override
+            public void onSuccess(ConfigRepo.FetchResult result) {
+                if (!isShowing()) return;
+                if (result.type == ConfigNodeBean.TYPE_TERMINAL) {
+                    applyLine(node); // 内容即终端配置：用真实 name/url 激活，不再换层
+                    return;
+                }
+                // 层级借用右列：LINE=线路列表 / WAREHOUSE=仓列表，勾选随列重建失效
+                selectedLine = null;
+                lineAdapter.setSelected(null);
+                lineNodes.clear();
+                lineNodes.addAll(result.nodes);
+                lineAdapter.setNewData(lineNodes);
+                updateTip();
+            }
+
+            @Override
+            public void onError(String msg) {
+                if (!isShowing()) return;
+                tvTip.setText(msg);
+                Toast.makeText(getContext(), msg, Toast.LENGTH_SHORT).show();
+            }
+        });
+    }
+
+    // ---------------- 删除 ----------------
+
+    /** 删左列配置：持久移除；若该配置即生效源或其缓存树含生效线路，清 API_URL 重启首页。 */
+    private void onDeleteConfig(final ConfigNodeBean node) {
+        if (node == null) return;
         final String activeUrl = ConfigRepo.getActiveUrl();
         String tip = activeUrl.isEmpty()
                 ? "删除「" + node.name + "」？"
@@ -296,9 +297,82 @@ public class ConfigDialog extends BaseDialog {
                     getContext().startActivity(intent);
                     return;
                 }
-                rebuildRootLevel();
+                // 重建左列（按 url 保留幸存的勾选）并清空中/右列
+                rebuildConfigColumn(selectedConfig == null ? null : selectedConfig.url);
             }
         });
+    }
+
+    /** 用最新持久配置列表重建左列，清空中/右列；keepUrl 幸存时恢复其勾选。 */
+    private void rebuildConfigColumn(String keepUrl) {
+        configNodes.clear();
+        for (ConfigItem item : ConfigRepo.getConfigList()) {
+            configNodes.add(new ConfigNodeBean(item.name, item.url, ConfigNodeBean.TYPE_CONFIG, false));
+        }
+        selectedConfig = null;
+        if (keepUrl != null) {
+            for (ConfigNodeBean node : configNodes) {
+                if (node.url != null && node.url.equals(keepUrl)) {
+                    selectedConfig = node;
+                    break;
+                }
+            }
+        }
+        configAdapter.setNewData(configNodes);
+        configAdapter.setSelected(selectedConfig);
+        clearMiddleAndRight();
+        updateTip();
+    }
+
+    /** 清空中/右列及其勾选态（删配置/重钻后的下游复位）。 */
+    private void clearMiddleAndRight() {
+        selectedWarehouse = null;
+        selectedLine = null;
+        warehouseAdapter.setSelected(null);
+        lineAdapter.setSelected(null);
+        warehouseNodes.clear();
+        lineNodes.clear();
+        warehouseAdapter.setNewData(warehouseNodes);
+        lineAdapter.setNewData(lineNodes);
+    }
+
+    /** 删中列仓库：会话移除 + 列表移除 + 右列清空。 */
+    private void onDeleteWarehouse(final ConfigNodeBean node) {
+        if (node == null) return;
+        confirmDelete("从列表移除「" + node.name + "」？（刷新后恢复）", new Runnable() {
+            @Override
+            public void run() {
+                ConfigRepo.sessionRemove(node.url);
+                removeByRef(warehouseNodes, node);
+                if (selectedWarehouse == node) selectedWarehouse = null;
+                warehouseAdapter.notifyDataSetChanged();
+                clearRightColumn();
+            }
+        });
+    }
+
+    /** 删右列线路：会话移除 + 列表移除。 */
+    private void onDeleteLine(final ConfigNodeBean node) {
+        if (node == null) return;
+        confirmDelete("从列表移除「" + node.name + "」？（刷新后恢复）", new Runnable() {
+            @Override
+            public void run() {
+                ConfigRepo.sessionRemove(node.url);
+                removeByRef(lineNodes, node);
+                if (selectedLine == node) selectedLine = null;
+                lineAdapter.notifyDataSetChanged();
+                updateTip();
+            }
+        });
+    }
+
+    /** 清空右列及勾选态（删仓库后的下游复位）。 */
+    private void clearRightColumn() {
+        selectedLine = null;
+        lineAdapter.setSelected(null);
+        lineNodes.clear();
+        lineAdapter.setNewData(lineNodes);
+        updateTip();
     }
 
     // ---------------- 推送与激活 ----------------
@@ -320,8 +394,8 @@ public class ConfigDialog extends BaseDialog {
         }
         etName.setText("");
         etUrl.setText("");
-        rebuildRootLevel(); // 根层带上新条目并回到配置级
-        fetchAndEnter(node); // 加入后自动钻入该配置
+        rebuildConfigColumn(node.url); // 重建左列并勾选新条目
+        fetchConfigIntoColumns(node); // 加入后自动拉取填中/右列
     }
 
     /** 激活线路（沿用既有生效链路，另记 CONFIG_ACTIVE 供✓回显）。 */
@@ -371,5 +445,14 @@ public class ConfigDialog extends BaseDialog {
             public void cancel() {
             }
         }).show();
+    }
+
+    @Override
+    public boolean onKeyDown(int keyCode, KeyEvent event) {
+        if (keyCode == KeyEvent.KEYCODE_BACK) {
+            dismiss(); // 三栏结构已表达层级，返回键直接关闭
+            return true;
+        }
+        return super.onKeyDown(keyCode, event);
     }
 }

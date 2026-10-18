@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- 配置弹窗条目：名称 + 生效✓ + 删除；tvName 锚定 ivSelected 左侧避免与✓重叠；
-     行根布局用 button_dialog_vod 两态背景（聚焦半透明高亮/常态透明）提供 TV 焦点视觉 -->
+     行根布局默认 button_dialog_vod 两态背景（聚焦半透明高亮/常态透明）提供 TV 焦点视觉，
+     勾选态行由 ConfigAdapter 切换为 shape_config_row_selected（橙色描边常驻高亮） -->
 <RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="@dimen/vs_50"
