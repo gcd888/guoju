@@ -37,7 +37,7 @@
             android:shadowColor="@color/atv_scrim_bottom"
             android:shadowDy="2"
             android:shadowRadius="8"
-            android:textColor="@color/atv_text_primary"
+            android:textColor="@color/hero_title_color"
             android:textSize="@dimen/ts_26" />
 
         <TextView

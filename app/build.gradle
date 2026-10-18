@@ -6,8 +6,8 @@ android {
     defaultConfig {
         applicationId 'com.github.gcd888.guoju'
         targetSdkVersion 28
-        versionCode 35
-        versionName '0.0.1.35'
+        versionCode 36
+        versionName '0.0.1.36'
         multiDexEnabled true
         //设置room的Schema的位置
         javaCompileOptions {

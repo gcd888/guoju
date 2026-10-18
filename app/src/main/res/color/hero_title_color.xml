@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Hero 片名颜色：焦点橙色高亮（可点击跳搜索），常态白 -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:color="@color/atv_accent" android:state_focused="true" />
+    <item android:color="#FFFFFFFF" />
+</selector>
