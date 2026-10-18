@@ -126,6 +126,14 @@ public class ConfigDialog extends BaseDialog {
         return false;
     }
 
+    /** 查列表中同 url 的虚拟节点（重复点同一 TERMINAL 型条目时复用，避免 genVirtualName 序号递增）。 */
+    private static ConfigNodeBean findVirtualByUrl(List<ConfigNodeBean> list, String url) {
+        for (ConfigNodeBean n : list) {
+            if (n.virtual && n.url != null && n.url.equals(url)) return n;
+        }
+        return null;
+    }
+
     // ---------------- 左列：配置 ----------------
 
     /** 点左列配置：勾选 + 拉取判型填中/右列。 */
@@ -136,10 +144,12 @@ public class ConfigDialog extends BaseDialog {
         fetchConfigIntoColumns(node);
     }
 
-    /** 长按左列配置：失效整棵缓存树（含恢复该树会话删除）并重新拉取填列。 */
+    /** 长按左列配置：勾选该配置并失效整棵缓存树（含恢复该树会话删除）重新拉取填列。 */
     private boolean onConfigLongClicked(ConfigNodeBean node) {
         if (node == null) return true;
         if (node.type != ConfigNodeBean.TYPE_CONFIG) return true; // 长按刷新仅配置级
+        selectedConfig = node; // 长按视为选中：勾选与刷新内容一致
+        configAdapter.setSelected(node);
         ConfigRepo.invalidateTree(node.url);
         fetchConfigIntoColumns(node);
         return true;
@@ -152,6 +162,7 @@ public class ConfigDialog extends BaseDialog {
             @Override
             public void onSuccess(ConfigRepo.FetchResult result) {
                 if (!isShowing()) return;
+                if (node != selectedConfig) return; // 用户已点别的条目，旧响应作废
                 fillColumnsByConfigType(result, node);
             }
 
@@ -170,6 +181,9 @@ public class ConfigDialog extends BaseDialog {
         selectedLine = null;
         warehouseAdapter.setSelected(null);
         lineAdapter.setSelected(null);
+        // 清列前先记下同 url 虚拟节点，填列时复用（重复点同一配置序号不涨）
+        ConfigNodeBean reuseWarehouse = findVirtualByUrl(warehouseNodes, config.url);
+        ConfigNodeBean reuseLine = findVirtualByUrl(lineNodes, config.url);
         warehouseNodes.clear();
         lineNodes.clear();
         if (result.type == ConfigNodeBean.TYPE_WAREHOUSE) {
@@ -177,13 +191,15 @@ public class ConfigDialog extends BaseDialog {
             warehouseNodes.addAll(result.nodes);
         } else {
             // LINE/TERMINAL 均缺仓库层：补单条虚拟仓库（url=配置 url，点它即重拉配置）
-            warehouseNodes.add(new ConfigNodeBean(ConfigRepo.genVirtualName("自定义仓库"),
-                    config.url, ConfigNodeBean.TYPE_WAREHOUSE, true));
+            warehouseNodes.add(reuseWarehouse != null ? reuseWarehouse
+                    : new ConfigNodeBean(ConfigRepo.genVirtualName("自定义仓库"),
+                            config.url, ConfigNodeBean.TYPE_WAREHOUSE, true));
             if (result.type == ConfigNodeBean.TYPE_LINE) {
                 lineNodes.addAll(result.nodes); // 右列=真实线路列表
             } else { // TERMINAL：右列单条虚拟线路（url=配置 url，可激活）
-                lineNodes.add(new ConfigNodeBean(ConfigRepo.genVirtualName("自定义线路"),
-                        config.url, ConfigNodeBean.TYPE_TERMINAL, true));
+                lineNodes.add(reuseLine != null ? reuseLine
+                        : new ConfigNodeBean(ConfigRepo.genVirtualName("自定义线路"),
+                                config.url, ConfigNodeBean.TYPE_TERMINAL, true));
             }
         }
         warehouseAdapter.setNewData(warehouseNodes);
@@ -203,6 +219,7 @@ public class ConfigDialog extends BaseDialog {
             @Override
             public void onSuccess(ConfigRepo.FetchResult result) {
                 if (!isShowing()) return;
+                if (node != selectedWarehouse) return; // 用户已点别的条目，旧响应作废
                 fillRightByWarehouseType(result, node);
             }
 
@@ -219,11 +236,13 @@ public class ConfigDialog extends BaseDialog {
     private void fillRightByWarehouseType(ConfigRepo.FetchResult result, ConfigNodeBean warehouse) {
         selectedLine = null;
         lineAdapter.setSelected(null);
+        ConfigNodeBean reuseLine = findVirtualByUrl(lineNodes, warehouse.url);
         lineNodes.clear();
         if (result.type == ConfigNodeBean.TYPE_TERMINAL) {
-            // 仓库下挂单终端：补虚拟线路（url=仓库 url）即可激活
-            lineNodes.add(new ConfigNodeBean(ConfigRepo.genVirtualName("自定义线路"),
-                    warehouse.url, ConfigNodeBean.TYPE_TERMINAL, true));
+            // 仓库下挂单终端：补虚拟线路（url=仓库 url）即可激活；已有同 url 虚拟线路则复用
+            lineNodes.add(reuseLine != null ? reuseLine
+                    : new ConfigNodeBean(ConfigRepo.genVirtualName("自定义线路"),
+                            warehouse.url, ConfigNodeBean.TYPE_TERMINAL, true));
         } else {
             lineNodes.addAll(result.nodes);
         }
@@ -249,6 +268,7 @@ public class ConfigDialog extends BaseDialog {
             @Override
             public void onSuccess(ConfigRepo.FetchResult result) {
                 if (!isShowing()) return;
+                if (node != selectedLine) return; // 用户已点别的条目，旧响应作废
                 if (result.type == ConfigNodeBean.TYPE_TERMINAL) {
                     applyLine(node); // 内容即终端配置：用真实 name/url 激活，不再换层
                     return;
@@ -297,8 +317,15 @@ public class ConfigDialog extends BaseDialog {
                     getContext().startActivity(intent);
                     return;
                 }
-                // 重建左列（按 url 保留幸存的勾选）并清空中/右列
-                rebuildConfigColumn(selectedConfig == null ? null : selectedConfig.url);
+                // 重建左列（按 url 保留幸存的勾选）并清空中/右列；
+                // 删的正是选中项时勾选首位（列表非空，中右列已清空无需重拉）
+                boolean wasSelected = selectedConfig == node;
+                rebuildConfigColumn(wasSelected ? null
+                        : (selectedConfig == null ? null : selectedConfig.url));
+                if (wasSelected && !configNodes.isEmpty()) {
+                    selectedConfig = configNodes.get(0);
+                    configAdapter.setSelected(selectedConfig);
+                }
             }
         });
     }
