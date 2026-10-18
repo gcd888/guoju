@@ -144,6 +144,37 @@ public final class ConfigRepo {
         CACHE.clear();
     }
 
+    /** 失效整棵会话缓存子树（长按刷新配置用；含 root 自身，遍历已缓存下级）。 */
+    public static void invalidateTree(String rootUrl) {
+        List<String> pending = new ArrayList<>();
+        pending.add(rootUrl);
+        while (!pending.isEmpty()) {
+            String cur = pending.remove(0);
+            FetchResult cached = CACHE.remove(cur);
+            if (cached == null) continue;
+            for (ConfigNodeBean n : cached.nodes) {
+                pending.add(n.url);
+            }
+        }
+    }
+
+    /** 检查 rootUrl 会话缓存子树（已展开部分）是否包含 target url。 */
+    public static boolean cacheTreeContains(String rootUrl, String target) {
+        if (TextUtils.isEmpty(target)) return false;
+        List<String> pending = new ArrayList<>();
+        pending.add(rootUrl);
+        while (!pending.isEmpty()) {
+            String cur = pending.remove(0);
+            FetchResult cached = CACHE.get(cur);
+            if (cached == null) continue;
+            for (ConfigNodeBean n : cached.nodes) {
+                if (target.equals(n.url)) return true;
+                pending.add(n.url);
+            }
+        }
+        return false;
+    }
+
     /** 拉取并判型（带会话缓存；SESSION_REMOVED 过滤下级节点）。 */
     public static void fetchNode(final String url, final NodeCallback callback) {
         if (TextUtils.isEmpty(url)) {
