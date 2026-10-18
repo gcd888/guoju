@@ -16,8 +16,10 @@ import org.json.JSONObject;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * 配置弹窗数据层：配置 > 仓库 > 线路 三级钻取。
@@ -144,32 +146,47 @@ public final class ConfigRepo {
         CACHE.clear();
     }
 
-    /** 失效整棵会话缓存子树（长按刷新配置用；含 root 自身，遍历已缓存下级）。 */
+    /**
+     * 失效整棵会话缓存子树（长按刷新配置用；含 root 自身，遍历已缓存下级）。
+     * 设计语义「仓库/线路删除=会话内移除，刷新或重进弹窗后恢复」：该树内被会话删除的
+     * url 一并解除拉黑，其余 url 的会话删除保留（长按刷新=恢复该树）。
+     */
     public static void invalidateTree(String rootUrl) {
         List<String> pending = new ArrayList<>();
+        Set<String> visited = new HashSet<>();
+        List<String> treeUrls = new ArrayList<>();
         pending.add(rootUrl);
+        visited.add(rootUrl);
         while (!pending.isEmpty()) {
             String cur = pending.remove(0);
+            treeUrls.add(cur);
             FetchResult cached = CACHE.remove(cur);
             if (cached == null) continue;
             for (ConfigNodeBean n : cached.nodes) {
-                pending.add(n.url);
+                if (visited.add(n.url)) {
+                    pending.add(n.url);
+                }
             }
         }
+        SESSION_REMOVED.removeAll(treeUrls);
     }
 
-    /** 检查 rootUrl 会话缓存子树（已展开部分）是否包含 target url。 */
+    /** 检查 rootUrl 会话缓存子树（已展开部分）是否包含 target url（visited 防缓存 url 成环）。 */
     public static boolean cacheTreeContains(String rootUrl, String target) {
         if (TextUtils.isEmpty(target)) return false;
         List<String> pending = new ArrayList<>();
+        Set<String> visited = new HashSet<>();
         pending.add(rootUrl);
+        visited.add(rootUrl);
         while (!pending.isEmpty()) {
             String cur = pending.remove(0);
             FetchResult cached = CACHE.get(cur);
             if (cached == null) continue;
             for (ConfigNodeBean n : cached.nodes) {
                 if (target.equals(n.url)) return true;
-                pending.add(n.url);
+                if (visited.add(n.url)) {
+                    pending.add(n.url);
+                }
             }
         }
         return false;

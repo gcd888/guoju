@@ -251,8 +251,10 @@ public class ConfigDialog extends BaseDialog {
             @Override
             public void run() {
                 ConfigRepo.removeConfigItem(node.url);
-                // 该配置会话缓存树若含当前生效线路 → 回默认源并重载
-                if (!activeUrl.isEmpty() && ConfigRepo.cacheTreeContains(node.url, activeUrl)) {
+                // 该配置自身即生效源（TERMINAL 经虚拟线路激活时 CONFIG_ACTIVE==config.url，
+                // cacheTreeContains 只查子孙查不到根）或其缓存树含生效线路 → 回默认源并重载
+                if (!activeUrl.isEmpty()
+                        && (node.url.equals(activeUrl) || ConfigRepo.cacheTreeContains(node.url, activeUrl))) {
                     ConfigRepo.setActiveUrl("");
                     Hawk.put(HawkConfig.API_URL, "");
                     SourceViewModel.clearRuntimeCache();
