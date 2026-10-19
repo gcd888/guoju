@@ -1,0 +1,113 @@
+<mxfile host="app.diagrams.net" agent="guoju-hero-flow" version="24.0.0">
+  <diagram name="Hero选图流程" id="hero-select-flow">
+    <mxGraphModel dx="1400" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1300" pageHeight="1700" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <!-- 说明框 -->
+        <mxCell id="note1" value="规则说明&#10;· 屏幕比例 R：App 启动时取实际分辨率计算（例 16:9 = 1.778）&#10;· 完全匹配：|图片比例 − R| / R ≤ 2%（16:10=1.6 等视为不匹配）&#10;· 三个页面均为桌面版照片页 sortby=size（尺寸序，第一张=最大）&#10;· &quot;最接近&quot;：比例差最小；同差取页面靠前（尺寸更大）者&#10;· m 缩略图 BitmapFactory 解码边界获取比例，命中后取 l 大图直链" style="shape=note;whiteSpace=wrap;html=1;size=20;align=left;verticalAlign=top;fillColor=#FFF9E6;strokeColor=#D6B656;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="820" y="40" width="420" height="150" as="geometry" />
+        </mxCell>
+
+        <!-- 示例框 -->
+        <mxCell id="note2" value="示例验证&#10;· 兰香如故：O 含 3.14:1 四联横幅与 1.78:1 横版 → 3.14 不完全匹配&#10;  但 O 中有 1.78:1 (p2935737331) → 完全匹配直接选中，剧名不再被裁&#10;· 现在就出发④：O 全竖版 → 无完全匹配 → 查 P → P 有 1.78:1&#10;  (p2926681786) → 取预告海报完全匹配，不回退竖版" style="shape=note;whiteSpace=wrap;html=1;size=20;align=left;verticalAlign=top;fillColor=#E8F4FF;strokeColor=#6C8EBF;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="820" y="210" width="420" height="130" as="geometry" />
+        </mxCell>
+
+        <!-- 主流程 -->
+        <mxCell id="n1" value="开始" style="ellipse;whiteSpace=wrap;html=1;fillColor=#D5E8D4;strokeColor=#82B366;fontSize=14;" vertex="1" parent="1">
+          <mxGeometry x="470" y="40" width="140" height="44" as="geometry" />
+        </mxCell>
+        <mxCell id="n2" value="获取当前屏幕比例 R&#10;（例 16:9 = 1.778）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DAE8FC;strokeColor=#6C8EBF;fontSize=14;" vertex="1" parent="1">
+          <mxGeometry x="430" y="120" width="220" height="54" as="geometry" />
+        </mxCell>
+        <mxCell id="n3" value="WebView 拉「正式海报」页&#10;（尺寸序）→ 解码全部 m 图比例 → 集合 O" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DAE8FC;strokeColor=#6C8EBF;fontSize=14;" vertex="1" parent="1">
+          <mxGeometry x="430" y="210" width="220" height="64" as="geometry" />
+        </mxCell>
+        <mxCell id="d1" value="O 中有完全匹配？&#10;（|比例−R|/R ≤ 2%）" style="rhombus;whiteSpace=wrap;html=1;fillColor=#FFE6CC;strokeColor=#D79B00;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="430" y="310" width="220" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="n4" value="返回 O 中第一张完全匹配&#10;（尺寸序第一 = 最大主视觉）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#D5E8D4;strokeColor=#82B366;fontSize=14;" vertex="1" parent="1">
+          <mxGeometry x="790" y="325" width="230" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="d2" value="O 非空？" style="rhombus;whiteSpace=wrap;html=1;fillColor=#FFE6CC;strokeColor=#D79B00;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="475" y="440" width="130" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="n5" value="暂存 oNear = O 中比例最接近 R 的图&#10;（例 16:10）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF2CC;strokeColor=#D6B656;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="90" y="447" width="250" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="n7" value="WebView 拉「预告海报」页&#10;→ 解码全部比例 → 集合 P" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DAE8FC;strokeColor=#6C8EBF;fontSize=14;" vertex="1" parent="1">
+          <mxGeometry x="430" y="550" width="220" height="64" as="geometry" />
+        </mxCell>
+        <mxCell id="d3" value="P 中有完全匹配？" style="rhombus;whiteSpace=wrap;html=1;fillColor=#FFE6CC;strokeColor=#D79B00;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="450" y="650" width="180" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="n8" value="返回 P 第一张完全匹配&#10;（预告海报完全匹配可覆盖正式海报的最接近候选）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#D5E8D4;strokeColor=#82B366;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="790" y="653" width="230" height="74" as="geometry" />
+        </mxCell>
+        <mxCell id="d4" value="O 非空？&#10;（P 无完全匹配时）" style="rhombus;whiteSpace=wrap;html=1;fillColor=#FFE6CC;strokeColor=#D79B00;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="450" y="770" width="180" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="n9" value="返回 oNear&#10;（正式海报里最接近的，如 16:10）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#D5E8D4;strokeColor=#82B366;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="790" y="780" width="230" height="64" as="geometry" />
+        </mxCell>
+        <mxCell id="n10" value="暂存 pNear = P 中比例最接近 R 的图&#10;（例 16:10），继续对比壁纸" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF2CC;strokeColor=#D6B656;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="90" y="780" width="250" height="64" as="geometry" />
+        </mxCell>
+        <mxCell id="n11" value="WebView 拉「壁纸」页&#10;→ 解码全部比例 → 集合 W" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DAE8FC;strokeColor=#6C8EBF;fontSize=14;" vertex="1" parent="1">
+          <mxGeometry x="430" y="900" width="220" height="64" as="geometry" />
+        </mxCell>
+        <mxCell id="d5" value="W 中有完全匹配？" style="rhombus;whiteSpace=wrap;html=1;fillColor=#FFE6CC;strokeColor=#D79B00;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="450" y="1000" width="180" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="n12" value="返回 W 第一张完全匹配" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#D5E8D4;strokeColor=#82B366;fontSize=14;" vertex="1" parent="1">
+          <mxGeometry x="790" y="1005" width="230" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="d6" value="pNear 存在？" style="rhombus;whiteSpace=wrap;html=1;fillColor=#FFE6CC;strokeColor=#D79B00;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="465" y="1120" width="150" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="n13" value="返回 pNear&#10;（预告海报最接近的）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#D5E8D4;strokeColor=#82B366;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="110" y="1125" width="210" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="d7" value="W 非空？" style="rhombus;whiteSpace=wrap;html=1;fillColor=#FFE6CC;strokeColor=#D79B00;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="475" y="1240" width="130" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="n14" value="返回 W 中比例最接近的图" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#D5E8D4;strokeColor=#82B366;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="790" y="1245" width="230" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="n15" value="三级全空 / WebView 失败&#10;→ 静默降级 rexxar 剧照兜底" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F8CECC;strokeColor=#B85450;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="430" y="1350" width="220" height="64" as="geometry" />
+        </mxCell>
+
+        <!-- 所有成功返回汇入的终点说明 -->
+        <mxCell id="note3" value="任一「返回」命中后：&#10;拼 l 大图直链（img3.doubanio.com/view/photo/l/public/p{id}.jpg）&#10;+ 防盗链后缀 → 赋值 vod.pic → rebindCurrent 重绑 Hero → 写当日缓存" style="shape=note;whiteSpace=wrap;html=1;size=18;align=left;verticalAlign=top;fillColor=#E8F4FF;strokeColor=#6C8EBF;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="820" y="1360" width="420" height="110" as="geometry" />
+        </mxCell>
+
+        <!-- 连线 -->
+        <mxCell id="e1" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" edge="1" parent="1" source="n1" target="n2"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e2" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" edge="1" parent="1" source="n2" target="n3"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e3" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" edge="1" parent="1" source="n3" target="d1"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e4" value="是" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=13;" edge="1" parent="1" source="d1" target="n4"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e5" value="否" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=13;" edge="1" parent="1" source="d1" target="d2"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e6" value="是：暂存最接近" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=13;" edge="1" parent="1" source="d2" target="n5"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e7" value="否" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=13;exitX=0.5;exitY=0;" edge="1" parent="1" source="d2" target="n7"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e8" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;exitX=0.5;exitY=1;" edge="1" parent="1" source="n5" target="n7"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e9" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" edge="1" parent="1" source="n7" target="d3"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e10" value="是" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=13;" edge="1" parent="1" source="d3" target="n8"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e11" value="否" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=13;" edge="1" parent="1" source="d3" target="d4"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e12" value="是" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=13;" edge="1" parent="1" source="d4" target="n9"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e13" value="否（O 为空）" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=13;" edge="1" parent="1" source="d4" target="n10"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e14" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" edge="1" parent="1" source="n10" target="n11"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e15" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" edge="1" parent="1" source="n11" target="d5"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e16" value="是" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=13;" edge="1" parent="1" source="d5" target="n12"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e17" value="否" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=13;" edge="1" parent="1" source="d5" target="d6"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e18" value="是" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=13;" edge="1" parent="1" source="d6" target="n13"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e19" value="否" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=13;" edge="1" parent="1" source="d6" target="d7"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e20" value="是" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=13;" edge="1" parent="1" source="d7" target="n14"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e21" value="否" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=13;" edge="1" parent="1" source="d7" target="n15"><mxGeometry relative="1" as="geometry" /></mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

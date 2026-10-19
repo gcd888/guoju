@@ -31,6 +31,7 @@ import com.github.tvbox.osc.ui.activity.HomeActivity;
 import com.github.tvbox.osc.ui.activity.SearchActivity;
 import com.github.tvbox.osc.ui.adapter.HomeHotVodAdapter;
 import com.github.tvbox.osc.ui.widget.HeroBannerView;
+import com.github.tvbox.osc.util.DoubanPosterFetcher;
 import com.github.tvbox.osc.util.HawkConfig;
 import com.github.tvbox.osc.util.ImgUtil;
 import com.github.tvbox.osc.util.LogWriter;
@@ -85,7 +86,7 @@ public class UserFragment extends BaseLazyFragment {
     private static final int HERO_MAX_COUNT = 3;
 
     /** 缓存键版本前缀：数据链路/参数变更时+1，立即作废旧版缓存。 */
-    private static final String CACHE_VER = "6";
+    private static final String CACHE_VER = "15";
 
     /** 日志 TAG：豆瓣请求/缓存/解析全链路。 */
     private static final String TAG = "GuoJuHome";
@@ -104,6 +105,10 @@ public class UserFragment extends BaseLazyFragment {
     /** 与最终渲染列表对齐的详情（过滤空槽后），供 heroBinder 按 position 取用。 */
     private final List<String[]> heroRenderExtras = new ArrayList<>();
 
+    /** 已被海报/剧照链升级过底图的条目（对象引用比对）；未升级条目 Hero 显示内置壁纸。 */
+    private final java.util.Set<Object> heroUpgraded =
+            java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+
     /** 首页货架自身数据快照（豆瓣热播/站点推荐）：tab 预览切走后回到推荐可恢复。 */
     private static List<Movie.Video> lastHomeShelf = null;
 
@@ -120,6 +125,7 @@ public class UserFragment extends BaseLazyFragment {
         @Nullable
         @Override
         public String coverUrl(@NonNull Movie.Video item) {
+            if (!heroUpgraded.contains(item)) return null; // 未升级条目用内置壁纸，无需预加载
             String pic = item.pic == null ? "" : item.pic.trim();
             // base64 内联图无需网络预加载
             return TextUtils.isEmpty(pic) || ImgUtil.isBase64Image(pic) ? null : pic;
@@ -132,13 +138,15 @@ public class UserFragment extends BaseLazyFragment {
             TextView tvMeta = itemView.findViewById(R.id.tvHeroMeta);
             TextView tvDesc = itemView.findViewById(R.id.tvHeroDesc);
             String pic = item.pic == null ? "" : item.pic.trim();
-            if (!TextUtils.isEmpty(pic)) {
-                if (ImgUtil.isBase64Image(pic)) {
-                    ivHero.setImageBitmap(ImgUtil.decodeBase64ToBitmap(pic));
-                } else {
-                    ImgUtil.load(pic, ivHero, 0, AutoSizeUtils.mm2px(mContext, 640),
-                            AutoSizeUtils.mm2px(mContext, 400), item.name);
-                }
+            if (!heroUpgraded.contains(item)) {
+                // 未升级条目（海报/剧照链未命中）：内置苹果风格壁纸铺底，文字照常立即加载
+                ivHero.setImageResource(R.drawable.hero_default_bg);
+            } else if (ImgUtil.isBase64Image(pic)) {
+                ivHero.setImageBitmap(ImgUtil.decodeBase64ToBitmap(pic));
+            } else if (!TextUtils.isEmpty(pic)) {
+                // 铺满裁切：等比缩放铺满全屏，垂直从顶部向下截取（TopCenterCrop，保住画面上部片名）
+                android.util.DisplayMetrics dm = mContext.getResources().getDisplayMetrics();
+                ImgUtil.loadHero(pic, ivHero, dm.widthPixels, dm.heightPixels, item.name);
             } else {
                 ivHero.setImageDrawable(ImgUtil.createTextDrawable(item.name));
             }
@@ -159,6 +167,13 @@ public class UserFragment extends BaseLazyFragment {
                 tvMeta.setVisibility(View.GONE);
             }
             if (!desc.isEmpty()) {
+                // 简介宽度=真实屏幕一半（AutoSize 改写了 Resources 指标，须 getRealMetrics 取物理宽）
+                try {
+                    android.util.DisplayMetrics dm2 = new android.util.DisplayMetrics();
+                    mActivity.getWindowManager().getDefaultDisplay().getRealMetrics(dm2);
+                    tvDesc.setWidth(dm2.widthPixels / 2);
+                } catch (Throwable ignored) {
+                }
                 tvDesc.setText(desc);
                 tvDesc.setVisibility(View.VISIBLE);
             } else {
@@ -461,7 +476,23 @@ public class UserFragment extends BaseLazyFragment {
         heroExtras.clear();
         heroRenderExtras.clear();
         heroBanner.setVisibility(View.VISIBLE);
-        heroBanner.setData(new ArrayList<>(list.subList(0, Math.min(list.size(), HERO_MAX_COUNT))), heroBinder);
+        final ArrayList<Movie.Video> heroList = new ArrayList<>(
+                list.subList(0, Math.min(list.size(), HERO_MAX_COUNT)));
+        heroBanner.setData(heroList, heroBinder);
+        // 站源条目只有剧名（无豆瓣 id）：先按剧名 suggest 搜豆瓣拿 id，再拉横版剧照替换竖版海报；
+        // 全部完成后若有变更才刷新轮播，拿不到横图保持站源原图
+        heroStillTarget = heroList;
+        final java.util.concurrent.atomic.AtomicInteger pending = new java.util.concurrent.atomic.AtomicInteger(heroList.size());
+        final java.util.concurrent.atomic.AtomicInteger changed = new java.util.concurrent.atomic.AtomicInteger(0);
+        android.os.Handler stagger = new android.os.Handler(android.os.Looper.getMainLooper());
+        for (int i = 0; i < heroList.size(); i++) {
+            final Movie.Video vod = heroList.get(i);
+            final int delay = i * 900;
+            stagger.postDelayed(() -> {
+                if (vod == null || mActivity == null) return;
+                fetchSuggestThenStill(vod, vod.pic, pending, changed);
+            }, delay);
+        }
     }
 
     /** HomeActivity 站点推荐数据回调：同时刷新货架与 Hero 轮播。 */
@@ -695,11 +726,17 @@ public class UserFragment extends BaseLazyFragment {
                                 desc = desc.replaceAll("\\s+", " ").trim();
                                 heroExtras.set(index, new String[]{meta.toString(), desc});
                                 LogWriter.i("hero[" + index + "] rexxar ok meta=[" + meta + "] descLen=" + desc.length());
+                                // 主渲染立即完成（文字 + 内置壁纸底图），海报链异步后补——失败绝不阻塞 Hero 渲染
+                                finishHeroTag(pending, today);
+                                // WebView 海报优先链：正式海报>预告海报>壁纸，失败才回退 rexxar 剧照
+                                huntPoster(vod, subjectId, index, kind, null);
+                            } else {
+                                finishHeroTag(pending, today);
                             }
                         } catch (Throwable t) {
                             LogWriter.e("hero[" + index + "] rexxar parse err", t);
+                            finishHeroTag(pending, today);
                         }
-                        finishHeroTag(pending, today);
                     }
 
                     @Override
@@ -790,6 +827,223 @@ public class UserFragment extends BaseLazyFragment {
                 });
     }
 
+    /** 照片池 JSON 解析：photos[] 内挑横版图。
+     *  实测 rexxar photos 接口无视 type/subtype/sortby 参数，恒返回混合全池（海报+壁纸+剧照），
+     *  且照片对象的 type/subtype 字段恒为通用值 photo/photo，无法区分网页版的
+     *  「正式海报(R,o) > 预告海报(R,p) > 壁纸(W) > 剧照(S)」分层——只能客户端近似官方意图：
+     *  横版(w>h)内优先宽幅(≥1.7，官方横版主视觉构图)，同档按 likers_count 最高（官方图获赞最多），再按宽度最大。 */
+    private static String parseStill(String body) {
+        try {
+            JsonObject root = new Gson().fromJson(body, JsonObject.class);
+            if (root == null || !root.has("photos") || !root.get("photos").isJsonArray()) return null;
+            String bestWide = null, bestAny = null;
+            long bestWideScore = -1, bestAnyScore = -1;
+            for (JsonElement el : root.getAsJsonArray("photos")) {
+                try {
+                    JsonObject p = el.getAsJsonObject();
+                    if (!p.has("image") || p.get("image").isJsonNull()) continue;
+                    JsonObject large = p.getAsJsonObject("image").getAsJsonObject("large");
+                    int w = large.get("width").getAsInt();
+                    int h = large.get("height").getAsInt();
+                    if (w <= h) continue;
+                    String url = large.get("url").getAsString();
+                    long likers = p.has("likers_count") && !p.get("likers_count").isJsonNull()
+                            ? p.get("likers_count").getAsLong() : 0;
+                    // 同档评分：点赞为主（官方主视觉获赞最高），宽度消歧
+                    long score = likers * 100000L + w;
+                    if (w >= h * 1.7) {
+                        if (score > bestWideScore) {
+                            bestWideScore = score;
+                            bestWide = url;
+                        }
+                    } else if (score > bestAnyScore) {
+                        bestAnyScore = score;
+                        bestAny = url;
+                    }
+                } catch (Throwable ignored) {
+                }
+            }
+            return bestWide != null ? bestWide : bestAny;
+        } catch (Throwable t) {
+            return null;
+        }
+    }
+
+    /**
+     * 拉取横版海报/壁纸/剧照替换 vod.pic（rexxar photos 接口）。
+     * combo 队列元素为 kind（movie/tv），依次尝试（kind 404 时兜底）直至拿到横图；
+     * type/subtype/sortby 参数均被 API 无视，分类选图在 parseStill 客户端完成。
+     * 全失败保留竖版原图。完成必回调 onDone（成功/失败均回调一次）。
+     */
+    private void fetchStillPhotos(final Movie.Video vod, final String subjectId,
+                                  final java.util.ArrayDeque<String> combos, final Runnable onDone) {
+        if (combos.isEmpty()) {
+            onDone.run();
+            return;
+        }
+        final String kind = combos.poll();
+        // API 单次上限 50 张：池子小时横图可能只有特写，官方 16:9 横版主视觉常排在 17~50 位（如兰香如故 533 张池）
+        String url = "https://m.douban.com/rexxar/api/v2/" + kind + "/" + subjectId
+                + "/photos?start=0&count=50&size=a";
+        LogWriter.i("hero still req " + kind + " " + vod.name);
+        OkGo.<String>get(url)
+                .headers("User-Agent", REXXAR_UA)
+                .headers("Referer", "https://m.douban.com/")
+                .execute(new AbsCallback<String>() {
+                    @Override
+                    public void onSuccess(Response<String> response) {
+                        String still = parseStill(response.body());
+                        if (still != null) {
+                            vod.pic = still + "@User-Agent=" + UA.randomOne()
+                                    + "@Referer=https://www.douban.com/";
+                            LogWriter.i("hero still ok(" + kind + ") " + vod.name + " " + still);
+                            onDone.run();
+                        } else {
+                            LogWriter.w("hero still none(" + kind + ") " + vod.name + " → 换源或保留竖图");
+                            fetchStillPhotos(vod, subjectId, combos, onDone);
+                        }
+                    }
+
+                    @Override
+                    public String convertResponse(okhttp3.Response response) throws Throwable {
+                        return response.body().string();
+                    }
+
+                    @Override
+                    public void onError(Response<String> response) {
+                        super.onError(response);
+                        LogWriter.e("hero still err(" + kind + ") code=" + response.code() + " " + vod.name);
+                        fetchStillPhotos(vod, subjectId, combos, onDone);
+                    }
+                });
+    }
+
+    /**
+     * WebView 海报优先链：正式海报 > 预告海报 > 壁纸。
+     * 借 WebView 执行 sec.douban.com 挑战 JS 放行桌面照片页，注入 JS 提取列表、
+     * 下载 m 缩略图解码边界挑横版（页面已按尺寸排序，第一张横版即取），命中即换 l 大图直链。
+     * 全链失败回退 rexxar 剧照横图（kind 未知时 tv/movie 队列）；两者皆败保持内置壁纸。
+     * onFallbackDone：整条链（海报或剧照兜底）结束时回调一次，供站源链路 pending 计数，可为 null。
+     */
+    private void huntPoster(final Movie.Video vod, final String subjectId,
+                            final int index, final String kind, final Runnable onFallbackDone) {
+        if (mActivity == null) {
+            if (onFallbackDone != null) onFallbackDone.run();
+            return;
+        }
+        final String oldPic = vod.pic == null ? "" : vod.pic;
+        // 屏幕比例（宽/高）：跨级比例匹配的目标 R。AutoSize 会改写 Resources 的 DisplayMetrics
+        // （实测拿到 2.21 的逻辑比例），必须用 WindowManager getRealMetrics 取真实物理分辨率
+        double screenRatio = 16.0 / 9.0;
+        try {
+            android.util.DisplayMetrics dm = new android.util.DisplayMetrics();
+            mActivity.getWindowManager().getDefaultDisplay().getRealMetrics(dm);
+            if (dm.heightPixels > 0) screenRatio = (double) dm.widthPixels / dm.heightPixels;
+        } catch (Throwable ignored) {
+        }
+        DoubanPosterFetcher.fetch(subjectId, vod.name, screenRatio, url -> mActivity.runOnUiThread(() -> {
+            if (mActivity == null) return;
+            if (url != null && heroBanner != null) {
+                vod.pic = url;
+                heroUpgraded.add(vod);
+                heroBanner.rebindCurrent();
+                saveHeroCache(todayString());
+                if (onFallbackDone != null) onFallbackDone.run();
+                return;
+            }
+            // WebView 全链失败 → rexxar 剧照兜底（横图）；type 参数被 API 无视，单 kind 拉全池客户端选图
+            LogWriter.w("hero[" + index + "] poster chain failed → still fallback " + vod.name);
+            java.util.ArrayDeque<String> combos = new java.util.ArrayDeque<>(kind != null
+                    ? java.util.Collections.singletonList(kind)
+                    : java.util.Arrays.asList("tv", "movie"));
+            fetchStillPhotos(vod, subjectId, combos, () -> {
+                boolean changed = !oldPic.equals(vod.pic);
+                LogWriter.i("hero[" + index + "] still fallback changed=" + changed);
+                if (changed) heroUpgraded.add(vod);
+                if (changed && heroBanner != null && mActivity != null) {
+                    mActivity.runOnUiThread(() -> {
+                        // 数据引用未变，setData 会被同引用短路——必须 rebindCurrent 重绑
+                        heroBanner.rebindCurrent();
+                        saveHeroCache(todayString());
+                    });
+                }
+                if (onFallbackDone != null) onFallbackDone.run();
+            });
+        }));
+    }
+
+    /** 站源 Hero 增强：剧名 → 豆瓣 suggest 搜索拿 id → 海报链（失败剧照兜底）。全部完成后回调刷新。 */
+    private void fetchSuggestThenStill(final Movie.Video vod, final String oldPic,
+                                       final java.util.concurrent.atomic.AtomicInteger pending,
+                                       final java.util.concurrent.atomic.AtomicInteger changed) {
+        try {
+            String q = java.net.URLEncoder.encode(vod.name == null ? "" : vod.name, "UTF-8");
+            OkGo.<String>get("https://movie.douban.com/j/subject_suggest?q=" + q)
+                    .headers("User-Agent", UA.randomOne())
+                    .headers("Referer", "https://movie.douban.com/")
+                    .execute(new AbsCallback<String>() {
+                        @Override
+                        public void onSuccess(Response<String> response) {
+                            String id = "";
+                            try {
+                                JsonArray arr = new Gson().fromJson(response.body(), JsonArray.class);
+                                if (arr != null && arr.size() > 0) {
+                                    id = arr.get(0).getAsJsonObject().get("id").getAsString();
+                                }
+                            } catch (Throwable ignored) {
+                            }
+                            LogWriter.i("hero suggest " + vod.name + " id=" + id);
+                            if (!id.isEmpty()) {
+                                final String sid = id;
+                                // WebView 海报优先链：正式海报>预告海报>壁纸，失败才回退 rexxar 剧照（tv/movie 队列）
+                                huntPoster(vod, sid, -1, null, () -> {
+                                    if (!oldPic.equals(vod.pic)) {
+                                        changed.incrementAndGet();
+                                        if (mActivity != null) {
+                                            mActivity.runOnUiThread(() -> {
+                                                if (heroBanner != null) heroBanner.rebindCurrent();
+                                            });
+                                        }
+                                    }
+                                    if (pending.decrementAndGet() == 0) refreshHeroAfterStills(changed);
+                                });
+                            } else if (pending.decrementAndGet() == 0) {
+                                refreshHeroAfterStills(changed);
+                            }
+                        }
+
+                        @Override
+                        public String convertResponse(okhttp3.Response response) throws Throwable {
+                            return response.body().string();
+                        }
+
+                        @Override
+                        public void onError(Response<String> response) {
+                            super.onError(response);
+                            if (pending.decrementAndGet() == 0) refreshHeroAfterStills(changed);
+                        }
+                    });
+        } catch (Throwable t) {
+            LogWriter.e("hero suggest err", t);
+            if (pending.decrementAndGet() == 0) refreshHeroAfterStills(changed);
+        }
+    }
+
+    /** 站源 Hero 横图全部就绪：有变更才重置轮播刷新（避免无谓打断正在显示的一张）。 */
+    private void refreshHeroAfterStills(java.util.concurrent.atomic.AtomicInteger changed) {
+        if (changed.get() > 0 && heroBanner != null && mActivity != null) {
+            mActivity.runOnUiThread(() -> heroBanner.setData(currentHeroList(), heroBinder));
+            LogWriter.i("hero stills applied, refreshed");
+        }
+    }
+
+    /** 当前 Hero 列表：站源增强链路用（renderHomeList 中暂存）。 */
+    private ArrayList<Movie.Video> heroStillTarget = null;
+
+    private ArrayList<Movie.Video> currentHeroList() {
+        return heroStillTarget != null ? heroStillTarget : new ArrayList<>(heroItems);
+    }
+
     /** 三分类全部返回（成功或失败）后统一渲染并缓存。 */
     private void finishHeroTag(java.util.concurrent.atomic.AtomicInteger pending, String today) {
         if (pending.decrementAndGet() != 0) {
@@ -868,6 +1122,9 @@ public class UserFragment extends BaseLazyFragment {
                         obj.has("meta") ? obj.get("meta").getAsString() : "",
                         obj.has("desc") ? obj.get("desc").getAsString() : ""});
             }
+            // 缓存恢复的条目视为已升级：直接显示缓存图（上轮链路终态），不再回落壁纸
+            heroUpgraded.addAll(heroItems);
+            LogWriter.i("hero cache restored n=" + heroItems.size());
             return !heroItems.isEmpty();
         } catch (Throwable th) {
             return false;

@@ -1,4 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- 通用确认弹窗：确认类按钮(id=rightBtn)视觉在左，取消(id=leftBtn)视觉在右。
+     注意 id 与视觉位置相反（历史约定：调用方第一参数=取消、第二参数=确认动作），
+     TipDialog 点击任一按钮后自动 dismiss。 -->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
@@ -33,8 +36,9 @@
             android:layout_marginTop="@dimen/vs_30"
             android:orientation="horizontal">
 
+            <!-- 视觉左侧：确认类按钮（调用方第二参数文案） -->
             <TextView
-                android:id="@+id/leftBtn"
+                android:id="@+id/rightBtn"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_gravity="center"
@@ -43,12 +47,13 @@
                 android:focusable="true"
                 android:gravity="center"
                 android:padding="@dimen/vs_10"
-                android:text="纭畾"
+                android:text="确定"
                 android:textColor="@color/dialog_text_primary"
                 android:textSize="@dimen/ts_22" />
 
+            <!-- 视觉右侧：取消按钮（调用方第一参数文案） -->
             <TextView
-                android:id="@+id/rightBtn"
+                android:id="@+id/leftBtn"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_gravity="center"
@@ -57,7 +62,7 @@
                 android:focusable="true"
                 android:gravity="center"
                 android:padding="@dimen/vs_10"
-                android:text="鍙栨秷"
+                android:text="取消"
                 android:textColor="@color/dialog_text_primary"
                 android:textSize="@dimen/ts_22" />
         </LinearLayout>

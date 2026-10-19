@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 首页推荐：Hero 铺满整屏作底图，海报货架叠加在底部（分类 tab 为 activity 层悬浮于 Hero 下部） -->
+<!-- 首页推荐：Hero 铺满整屏作底图（解码按屏幕实际像素 1:1，不缩放裁切），海报货架叠加在底部（分类 tab 为 activity 层悬浮于 Hero 下部） -->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:id="@+id/userScroll"

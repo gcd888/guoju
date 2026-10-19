@@ -18,6 +18,7 @@ import android.view.animation.AccelerateInterpolator;
 import android.view.animation.AlphaAnimation;
 import android.view.animation.Animation;
 import android.view.animation.BounceInterpolator;
+import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -98,7 +99,7 @@ public class HomeActivity extends BaseActivity {
     /** 页面数据已就绪（可在两层间切换）。 */
     private volatile boolean pageDataReady = false;
 
-    private LinearLayout topLayout;
+    private FrameLayout topLayout;
     private TextView tvName;
     private TvRecyclerView mGridView;
     private NoScrollViewPager mViewPager;
@@ -387,16 +388,16 @@ public class HomeActivity extends BaseActivity {
         });
     }
 
-    /** tab 行尾部固定页：观看历史 / 我的收藏（与分类网格同一套两层交互）。 */
+    /** tab 行固定页：观看历史 / 我的收藏，固定排在「推荐」后面，站源分类 tab 依次后移。 */
     private static final String TAB_NAV_HISTORY = "nav_history";
     private static final String TAB_NAV_COLLECT = "nav_collect";
 
-    private static void appendNavTabs(List<MovieSort.SortData> list) {
+    private static void insertNavTabs(List<MovieSort.SortData> list) {
         if (list == null) {
             return;
         }
-        list.add(new MovieSort.SortData(TAB_NAV_HISTORY, "观看历史"));
-        list.add(new MovieSort.SortData(TAB_NAV_COLLECT, "我的收藏"));
+        list.add(1, new MovieSort.SortData(TAB_NAV_HISTORY, "观看历史"));
+        list.add(2, new MovieSort.SortData(TAB_NAV_COLLECT, "我的收藏"));
     }
 
     /** 顶部 Home 图标：回到推荐首页（一级态、推荐 tab）。 */
@@ -566,9 +567,12 @@ public class HomeActivity extends BaseActivity {
                             return;
                         }
                         if (mConfigErrorDialog == null)
-                            mConfigErrorDialog = new TipDialog(HomeActivity.this, msg, "重试", "取消", new TipDialog.OnListener() {
+                            // 弹窗约定：第一参数=取消（视觉右），第二参数=确认动作（视觉左）
+                            mConfigErrorDialog = new TipDialog(HomeActivity.this, msg, "取消", "重试", new TipDialog.OnListener() {
                                 @Override
                                 public void left() {
+                                    dataInitOk = true;
+                                    jarInitOk = true;
                                     mHandler.post(new Runnable() {
                                         @Override
                                         public void run() {
@@ -580,8 +584,6 @@ public class HomeActivity extends BaseActivity {
 
                                 @Override
                                 public void right() {
-                                    dataInitOk = true;
-                                    jarInitOk = true;
                                     mHandler.post(new Runnable() {
                                         @Override
                                         public void run() {
@@ -667,6 +669,9 @@ public class HomeActivity extends BaseActivity {
             }
             mViewPager.setPageTransformer(true, new DefaultTransformer());
             mViewPager.setAdapter(pageAdapter);
+            // 预实例化全部 tab 页：一级态预览需要未激活分类页可被 forceRefresh 拉数据
+            // （否则远端页 rootView 未创建，无法初始化，切 tab 货架永远停在推荐内容）
+            mViewPager.setOffscreenPageLimit(fragments.size());
             mViewPager.setCurrentItem(currentSelected, false);
             updateTabAnchor();
         }
@@ -695,7 +700,7 @@ public class HomeActivity extends BaseActivity {
         if (newSortData == null) {
             newSortData = new ArrayList<>();
         }
-        appendNavTabs(newSortData);
+        insertNavTabs(newSortData);
         List<MovieSort.SortData> oldSortData = sortAdapter.getData();
         if (oldSortData.isEmpty()
                 || newSortData.isEmpty()
@@ -1278,7 +1283,7 @@ public class HomeActivity extends BaseActivity {
         cancelHomeSortLoading();
         clearHomePages();
         List<MovieSort.SortData> initSort = DefaultConfig.adjustSort(ApiConfig.get().getHomeSourceBean().getKey(), new ArrayList<>(), true);
-        appendNavTabs(initSort);
+        insertNavTabs(initSort);
         sortAdapter.setNewData(initSort);
         initViewPager(null);
         tvName.clearAnimation();

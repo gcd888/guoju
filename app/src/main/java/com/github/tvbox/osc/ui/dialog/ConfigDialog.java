@@ -126,11 +126,13 @@ public class ConfigDialog extends BaseDialog {
     }
 
     /** 打开恢复链入口：须在 show 后触发——复用的填列方法带 isShowing 守卫，且 ConfigRepo.CACHE
-     * 命中时回调同步返回，构造器里调用会被守卫拦掉。 */
+     * 命中时回调同步返回，构造器里调用会被守卫拦掉。
+     * 另：打开配置即展开扫码推送二维码（链接主要经手机扫码推送），关闭后回到三栏配置。 */
     @Override
     public void show() {
         super.show();
         restoreLastSelection();
+        new RemoteDialog(getContext()).show();
     }
 
     /** 初始化单列列表（布局 + 适配器；点击/长按/删除由各列单独挂接）。 */

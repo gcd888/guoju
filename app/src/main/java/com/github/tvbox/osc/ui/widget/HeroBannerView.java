@@ -199,6 +199,25 @@ public class HeroBannerView extends FrameLayout {
                 ? ViewGroup.FOCUS_AFTER_DESCENDANTS : ViewGroup.FOCUS_BLOCK_DESCENDANTS);
     }
 
+    /**
+     * 重新绑定当前两层（数据字段就地更新后调用，如横图替换 vod.pic）：
+     * 不重置位置/节律，setItems 引用比对短路不会漏掉字段级变更。
+     */
+    public void rebindCurrent() {
+        if (binder == null || items == null || itemCount == 0 || layers[0] == null) {
+            return;
+        }
+        try {
+            binder.onBind(layers[activeLayer], items.get(currentPos), currentPos);
+            if (itemCount > 1 && layers[1] != null) {
+                int otherPos = (currentPos + 1) % itemCount;
+                binder.onBind(layers[1 - activeLayer], items.get(otherPos), otherPos);
+            }
+            preloadNext(currentPos);
+        } catch (Throwable ignored) {
+        }
+    }
+
     private void restartAutoSwitch() {
         com.github.tvbox.osc.util.LogWriter.i(logTag + " restart active=" + isSwitchActive()
                 + " count=" + itemCount + " at=" + android.os.SystemClock.uptimeMillis());

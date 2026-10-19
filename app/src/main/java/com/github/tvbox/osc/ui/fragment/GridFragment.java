@@ -578,8 +578,16 @@ public class GridFragment extends BaseLazyFragment implements HomeGridPage {
     }
 
     public void forceRefresh() {
-        if (mGridView == null || gridAdapter == null || sourceViewModel == null) return;
-        if (isRequesting) return;
+        if (rootView == null) return; // 页面尚未被 ViewPager 实例化
+        if (gridAdapter == null || sourceViewModel == null) {
+            // 一级态预览触发时尚未懒加载（init 未跑，viewPager 停在第 0 页）：
+            // 补跑首次初始化（含数据装载）；置 mIsFirstVisible=false，
+            // 防止该页真正可见时 BaseLazyFragment 再次 init 造成重复初始化
+            mIsFirstVisible = false;
+            init();
+            return;
+        }
+        if (mGridView == null || isRequesting) return;
         page = 1;
         initData();
     }

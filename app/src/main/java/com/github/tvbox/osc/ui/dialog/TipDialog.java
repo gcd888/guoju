@@ -23,16 +23,20 @@ public class TipDialog extends BaseDialog {
         tipInfo.setText(tip);
         leftBtn.setText(left);
         rightBtn.setText(right);
+        // 点击任一按钮后统一关闭弹窗再执行回调：回调方可空实现（如"取消"），
+        // 修复"点取消不关窗像失效"的问题；dismiss 幂等，回调内再 dismiss 无副作用
         leftBtn.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
                 listener.left();
+                dismiss();
             }
         });
         rightBtn.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
                 listener.right();
+                dismiss();
             }
         });
         setOnCancelListener(new OnCancelListener() {

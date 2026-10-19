@@ -162,6 +162,36 @@ public class ImgUtil {
                 .into(view);
     }
 
+    /**
+     * Hero 全屏底图：等比缩放铺满 + 垂直顶部对齐截取（TopCenterCrop，从上往下裁），
+     * 区别于通用 5 参数 load 的双向居中裁（CenterCrop）——竖版海报铺满时保住画面上部片名。
+     */
+    public static void loadHero(String url, ImageView view, int newWidth, int newHeight, String label) {
+        view.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        Drawable fallback = createTextDrawable(TextUtils.isEmpty(label) ? "TVBox" : label, newWidth, newHeight, 1);
+        Drawable placeholder = createImagePlaceholderDrawable(newWidth, newHeight, 1);
+        if (isInvalidImageUrl(url)) {
+            view.setImageDrawable(fallback);
+            return;
+        }
+        RequestOptions options = new RequestOptions()
+                .format(DecodeFormat.PREFER_RGB_565)
+                .diskCacheStrategy(DiskCacheStrategy.AUTOMATIC)
+                .dontAnimate()
+                .transform(new TopCenterCrop(), new RoundedCorners(1));
+        if (newWidth > 0 && newHeight > 0) {
+            options = options.override(newWidth, newHeight);
+        }
+        Glide.with(App.getInstance())
+                .asBitmap()
+                .load(getUrl(url))
+                .placeholder(placeholder)
+                .error(fallback)
+                .listener(getListener(view, ImageView.ScaleType.CENTER_CROP, fallback))
+                .apply(options)
+                .into(view);
+    }
+
     public static void loadUrl(String url, ImageView view) {
         load(url, view, 10);
     }
@@ -321,6 +351,8 @@ public class ImgUtil {
         return new RequestListener<Bitmap>() {
             @Override
             public boolean onLoadFailed(@Nullable GlideException e, Object model, Target<Bitmap> target, boolean isFirstResource) {
+                // 加载失败日志：定位个别图片（如防盗链头失效）不显示的盲区
+                com.github.tvbox.osc.util.LogWriter.e("img fail " + model);
                 view.setScaleType(scaleType);
                 view.setImageDrawable(fallback);
                 return true;
