@@ -74,8 +74,8 @@ public class HomePageAdapter extends FragmentPagerAdapter {
 
     @Override
     public void destroyItem(ViewGroup container, int position, Object object) {
-        // super.destroyItem(container, position, object);
-        Fragment fragment = (Fragment) object;
-        fragmentManager.beginTransaction().hide(fragment).commitAllowingStateLoss();
+        // 恢复标准行为：销毁页面时真正 detach 视图。此前仅 hide()，页面视图会残留，
+        // 整页重建的布局空档里可能把未布局的货架（gravity=bottom，几何在父容器原点）画到屏幕左上角
+        super.destroyItem(container, position, object);
     }
 }

@@ -457,6 +457,7 @@ public class UserFragment extends BaseLazyFragment {
             LogWriter.i("shelf home buffered size=" + (list == null ? 0 : list.size()));
         } else {
             homeHotVodAdapter.setNewData(list);
+            safeShelfLayout();
             LogWriter.i("shelf render home size=" + (list == null ? 0 : list.size()));
         }
         HomeActivity.notifyHomeDataReady();
@@ -506,6 +507,7 @@ public class UserFragment extends BaseLazyFragment {
             instance.renderHomeList(list);
         } else if (homeHotVodAdapter != null) {
             homeHotVodAdapter.setNewData(list);
+            safeShelfLayout();
         }
     }
 
@@ -521,6 +523,24 @@ public class UserFragment extends BaseLazyFragment {
         }
         homeHotVodAdapter.setNewData(preview);
         LogWriter.i("shelf preview size=" + preview.size());
+        safeShelfLayout();
+    }
+
+    /** 防御：货架数据落位后补一次布局请求。货架 layout_gravity=bottom，整页重建的布局空档里
+     *  未布局的货架几何位于父容器原点（屏幕左上角），若被提前绘制就会表现为推荐卡卡在左上角。 */
+    private static void safeShelfLayout() {
+        if (tvHotList == null) {
+            return;
+        }
+        tvHotList.post(new Runnable() {
+            @Override
+            public void run() {
+                if (tvHotList != null) {
+                    tvHotList.requestLayout();
+                    tvHotList.invalidate();
+                }
+            }
+        });
     }
 
     /** 一级态回到推荐 tab：恢复首页货架数据（豆瓣热播/站点推荐）。 */
@@ -537,6 +557,7 @@ public class UserFragment extends BaseLazyFragment {
         }
         homeHotVodAdapter.setNewData(new ArrayList<>(lastHomeShelf));
         LogWriter.i("shelf restore size=" + lastHomeShelf.size());
+        safeShelfLayout();
     }
 
     private void initHomeHotVod() {

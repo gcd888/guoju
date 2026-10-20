@@ -347,6 +347,22 @@ public class HomeActivity extends BaseActivity {
 
     private boolean skipNextUpdate = false;
 
+    /** 最近一次成功渲染首页时使用的分类签名，用于识别重复/迟到的 sort 回调，避免无谓的整页重建。 */
+    private String lastHomeSortSignature = null;
+
+    /** 首页分类签名：源key + 推荐模式 + 分类id/名称列表。签名未变时 sort 回调无需推倒重建首页。 */
+    private String homeSortSignature(AbsSortXml absXml) {
+        StringBuilder sb = new StringBuilder();
+        sb.append(ApiConfig.get().getHomeSourceBean().getKey()).append('|');
+        sb.append(Hawk.get(HawkConfig.HOME_REC, HawkConfig.DEFAULT_HOME_REC)).append('|');
+        if (absXml != null && absXml.classes != null && absXml.classes.sortList != null) {
+            for (MovieSort.SortData data : absXml.classes.sortList) {
+                sb.append(data.id).append(',').append(data.name).append(';');
+            }
+        }
+        return sb.toString();
+    }
+
     /** 顶部导航：home 图标(=设置的主页)/点播/直播/短剧/音乐/搜索/配置/设置，主页对应项隐藏。 */
     private void initTopNav() {
         View.OnClickListener listener = new View.OnClickListener() {
@@ -494,6 +510,22 @@ public class HomeActivity extends BaseActivity {
                 }
                 SourceBean home = ApiConfig.get().getHomeSourceBean();
                 showSuccess();
+                String signature = homeSortSignature(absXml);
+                if (pageAdapter != null && signature.equals(lastHomeSortSignature)) {
+                    // 分类/源/推荐模式均未变化：不推倒重建 ViewPager（重建会闪屏，且可能在布局空档
+                    // 把 gravity=bottom 的货架画到父容器原点=屏幕左上角，表现为推荐卡卡在左上角），
+                    // 仅刷新推荐数据后返回
+                    updateHomeRec(absXml);
+                    if (home != null && home.getName() != null && !home.getName().isEmpty()) tvName.setText(home.getName());
+                    tvName.clearAnimation();
+                    homeSortLoading = false;
+                    loadingSourceKey = null;
+                    previousHomeName = null;
+                    previousHomeSource = null;
+                    LogWriter.i("home sort unchanged, skip rebuild");
+                    return;
+                }
+                lastHomeSortSignature = signature;
                 clearHomePages();
                 List<MovieSort.SortData> newSortData;
                 if (absXml != null && absXml.classes != null && absXml.classes.sortList != null) {
