@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 新页面进入：从 96% 轻微放大到 1 并淡入（tvOS 式柔和浮现） -->
+<set xmlns:android="http://schemas.android.com/apk/res/android"
+    android:interpolator="@android:anim/decelerate_interpolator">
+    <scale
+        android:duration="260"
+        android:fromXScale="0.96"
+        android:fromYScale="0.96"
+        android:toXScale="1.0"
+        android:toYScale="1.0"
+        android:pivotX="50%"
+        android:pivotY="50%" />
+    <alpha
+        android:duration="260"
+        android:fromAlpha="0.0"
+        android:toAlpha="1.0" />
+</set>

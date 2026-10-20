@@ -13,6 +13,7 @@
         <ImageView
             android:layout_width="@dimen/vs_120"
             android:layout_height="@dimen/vs_120"
+            android:alpha="0.6"
             android:src="@drawable/icon_empty" />
 
         <TextView
@@ -20,9 +21,18 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="@dimen/vs_20"
             android:gravity="center"
-            android:text="没找到数据"
-            android:textColor="@android:color/white"
+            android:text="暂无内容"
+            android:textColor="@color/atv_text_secondary"
             android:textSize="@dimen/ts_24" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/vs_6"
+            android:gravity="center"
+            android:text="换个分类或搜索试试"
+            android:textColor="@color/atv_text_tertiary"
+            android:textSize="@dimen/ts_16" />
     </LinearLayout>
 
 </FrameLayout>

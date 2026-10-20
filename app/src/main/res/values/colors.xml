@@ -1,56 +1,58 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="color_6200EE">#6200EE</color>
-    <color name="color_3700B3">#3700B3</color>
-    <color name="color_03DAC5">#03DAC5</color>
-    <color name="title_fouse_n">#ffce7900</color>
-    <color name="color_1890FF">#1890FF</color>
-    <color name="color_FFB800">#FF6600</color>
-    <color name="color_00FF0A">#00FF0A</color>
-    <color name="color_CBF46A">#CBF46A</color>
-    <color name="color_FF90CA09">#90CA09</color>
-    <color name="color_BD0CADE2">#BD0CADE2</color>
-    <color name="color_FF0057">#FF0057</color>
-    <color name="color_FF5F00">#FF5F00</color>
-    <color name="color_00796B">#00796B</color>
-    <color name="color_FFB6C1">#FFB6C1</color>
-    <color name="color_3D3D3D">#3D3D3D</color>
-    <color name="color_32364E">#32364E</color>
-    <color name="color_6632364E">#6632364E</color>
+    <!-- Apple 风格收敛：所有历史色名保留，但值统一映射到中性黑灰 + iOS 系统色 -->
+    <color name="color_6200EE">#FF0A84FF</color>
+    <color name="color_3700B3">#FF000000</color>
+    <color name="color_03DAC5">#FF0A84FF</color>
+    <color name="title_fouse_n">#FF0A84FF</color>
+    <color name="color_1890FF">#FF0A84FF</color>
+    <color name="color_FFB800">#FF0A84FF</color>
+    <color name="color_00FF0A">#FF30D158</color>
+    <color name="color_CBF46A">#FF30D158</color>
+    <color name="color_FF90CA09">#FF30D158</color>
+    <color name="color_BD0CADE2">#CC0A84FF</color>
+    <color name="color_FF0057">#FFFF453A</color>
+    <color name="color_FF5F00">#FF0A84FF</color>
+    <color name="color_00796B">#FF48484A</color>
+    <color name="color_FFB6C1">#FF0A84FF</color>
+    <color name="color_3D3D3D">#FF3A3A3C</color>
+    <color name="color_32364E">#FF2C2C2E</color>
+    <color name="color_6632364E">#662C2C2E</color>
     <color name="color_CCFFFFFF">#BBFFFFFF</color>
-    <color name="color_0CADE2">#0CADE2</color>
+    <color name="color_0CADE2">#FF0A84FF</color>
     <color name="color_6CFFFFFF">#6CFFFFFF</color>
     <color name="color_66000000">#66000000</color>
     <color name="color_99000000">#99000000</color>
     <color name="color_FFFFFF_50">#80FFFFFF</color>
     <color name="color_CC000000">#CC000000</color>
     <color name="color_000000_30">#48000000</color>
-    <color name="color_02F8E1">#02F8E1</color>
-    <color name="color_353744">#353744</color>
-    <color name="color_CC353744">#CC353744</color>
-    <color name="color_6C3D3D3D">#6c3d3d3d</color>
+    <color name="color_02F8E1">#FF0A84FF</color>
+    <color name="color_353744">#FF2C2C2E</color>
+    <color name="color_CC353744">#CC2C2C2E</color>
+    <color name="color_6C3D3D3D">#6C3A3A3C</color>
     <color name="color_BBFFFFFF">#bbffffff</color>
     <color name="color_FFFFFF">#ffffffff</color>
     <color name="color_33FFFFFF">#33ffffff</color>
     <color name="color_99FFFFFF">#4D000000</color>
-    <color name="color_59353744">#59353744</color>
-    <color name="color_80FF0057">#66FF0057</color>
+    <color name="color_59353744">#592C2C2E</color>
+    <color name="color_80FF0057">#66FF453A</color>
     <color name="color_000000_60">#99000000</color>
     <color name="color_dialog_bg">#88000000</color>
     <color name="color_scrollview_bg">#44000000</color>
-    <color name="color_text_primary">#FFFFFAE0</color>
+    <color name="color_text_primary">#FFFFFFFF</color>
 
     <!-- Unified dialog palette. Change these to update dialog surfaces globally. -->
-    <color name="dialog_panel_bg">#D91D202A</color>
+    <color name="dialog_panel_bg">#E61C1C1E</color>
     <color name="dialog_panel_stroke">#33FFFFFF</color>
-    <color name="dialog_control_bg">#80353744</color>
-    <color name="dialog_control_bg_focused">#CC1890FF</color>
+    <!-- 确认弹窗（TipDialog）：常叠在其他弹窗之上，底色/描边均比 dialog_panel_* 明显更亮更实 -->
+    <color name="dialog_tip_bg">#F53A3A3E</color>
+    <color name="dialog_tip_stroke">#8CFFFFFF</color>
+    <color name="dialog_tip_btn_primary">#FF0A84FF</color>
+    <color name="dialog_control_bg">#663A3A3C</color>
+    <color name="dialog_control_bg_focused">#CC0A84FF</color>
     <color name="dialog_control_stroke">#22FFFFFF</color>
-    <color name="dialog_control_stroke_focused">#CC02F8E1</color>
-    <color name="dialog_input_bg">#66353744</color>
+    <color name="dialog_control_stroke_focused">#FF0A84FF</color>
+    <color name="dialog_input_bg">#663A3A3C</color>
     <color name="dialog_text_primary">#FFFFFFFF</color>
     <color name="dialog_text_hint">#80FFFFFF</color>
-
-
-
 </resources>

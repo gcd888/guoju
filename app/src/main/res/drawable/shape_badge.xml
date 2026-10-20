@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 海报角标：accent 圆角小胶囊 -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android">
+    <corners android:radius="4mm" />
+    <solid android:color="@color/atv_accent" />
+</shape>

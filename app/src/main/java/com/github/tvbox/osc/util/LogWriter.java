@@ -14,10 +14,12 @@ import java.util.Date;
 import java.util.Locale;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * 调试日志双写：logcat + 本地文件（无需连电脑即可排查）。
  * 文件位置：{cachePath}/guoju_log.txt，超过 512KB 自动清空重写。
+ * 每次进程首次写日志时先落一行版本横幅，便于核对设备上实际运行的安装包版本。
  */
 public class LogWriter {
     private static final String TAG = "GuoJuHome";
@@ -25,6 +27,7 @@ public class LogWriter {
     private static final ExecutorService EXEC = Executors.newSingleThreadExecutor();
     private static final SimpleDateFormat FMT = new SimpleDateFormat("MM-dd HH:mm:ss.SSS", Locale.CHINA);
     private static final Handler MAIN = new Handler(Looper.getMainLooper());
+    private static final AtomicBoolean BANNER_WRITTEN = new AtomicBoolean(false);
 
     private LogWriter() {
     }
@@ -72,6 +75,14 @@ public class LogWriter {
                                 file.delete();
                             }
                             fw = new FileWriter(file, true);
+                            if (BANNER_WRITTEN.compareAndSet(false, true)) {
+                                // 新安装包（versionCode 变化）时自动清空旧日志，避免新旧日志混淆
+                                if (clearLogIfNewInstall()) {
+                                    fw.close();
+                                    fw = new FileWriter(file, false);
+                                }
+                                fw.write(FMT.format(new Date()) + " I/" + TAG + ": " + versionBanner() + "\n");
+                            }
                             fw.write(line);
                             fw.flush();
                         } catch (Throwable ignored) {
@@ -87,5 +98,47 @@ public class LogWriter {
                 });
             }
         });
+    }
+
+    /** versionCode 变化即视为新装/升级，返回 true 并记录新版本号（用 SharedPreferences 持久化）。 */
+    private static boolean clearLogIfNewInstall() {
+        try {
+            android.content.SharedPreferences sp = App.getInstance()
+                    .getSharedPreferences("guoju_log", android.content.Context.MODE_PRIVATE);
+            android.content.pm.PackageInfo pi = App.getInstance().getPackageManager()
+                    .getPackageInfo(App.getInstance().getPackageName(), 0);
+            int current = pi.versionCode;
+            int saved = sp.getInt("version_code", 0);
+            if (saved != current) {
+                sp.edit().putInt("version_code", current).apply();
+                return true;
+            }
+            return false;
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
+
+    /** 版本横幅：versionName (versionCode) + 打包时间 + APK 安装时间，用于核对设备实际运行版本。 */
+    private static String versionBanner() {
+        StringBuilder sb = new StringBuilder("==== GuoJu ");
+        try {
+            android.content.pm.PackageInfo pi = App.getInstance().getPackageManager()
+                    .getPackageInfo(App.getInstance().getPackageName(), 0);
+            sb.append("v").append(pi.versionName).append(" (").append(pi.versionCode).append(")");
+        } catch (Throwable ignored) {
+            sb.append("v(unknown)");
+        }
+        try {
+            sb.append(" build ").append(com.github.tvbox.osc.BuildConfig.BUILD_TIME);
+        } catch (Throwable ignored) {
+        }
+        try {
+            long installed = new File(App.getInstance().getApplicationInfo().sourceDir).lastModified();
+            if (installed > 0) sb.append(" installed ").append(FMT.format(new Date(installed)));
+        } catch (Throwable ignored) {
+        }
+        sb.append(" ====");
+        return sb.toString();
     }
 }

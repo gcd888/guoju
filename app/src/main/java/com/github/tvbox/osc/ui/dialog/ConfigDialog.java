@@ -2,6 +2,8 @@ package com.github.tvbox.osc.ui.dialog;
 
 import android.content.Context;
 import android.content.Intent;
+import android.os.Handler;
+import android.os.Looper;
 import android.text.TextUtils;
 import android.view.KeyEvent;
 import android.widget.EditText;
@@ -127,12 +129,14 @@ public class ConfigDialog extends BaseDialog {
 
     /** 打开恢复链入口：须在 show 后触发——复用的填列方法带 isShowing 守卫，且 ConfigRepo.CACHE
      * 命中时回调同步返回，构造器里调用会被守卫拦掉。
-     * 另：打开配置即展开扫码推送二维码（链接主要经手机扫码推送），关闭后回到三栏配置。 */
+     * 另：当前无配置时自动展开扫码推送二维码（链接主要经手机扫码推送）；已有配置不弹，直接进三栏。 */
     @Override
     public void show() {
         super.show();
         restoreLastSelection();
-        new RemoteDialog(getContext()).show();
+        if (ConfigRepo.getConfigList().isEmpty()) {
+            new RemoteDialog(getContext()).show();
+        }
     }
 
     /** 初始化单列列表（布局 + 适配器；点击/长按/删除由各列单独挂接）。 */
@@ -254,17 +258,30 @@ public class ConfigDialog extends BaseDialog {
         fetchConfigIntoColumns(node);
     }
 
-    /** 长按左列配置：选中该配置并失效整棵缓存树（含恢复该树会话删除）重新拉取填列。 */
+    /** 长按左列配置：失效整棵缓存树重拉，并保留上次的配置/仓库/线路选中（走恢复链找回高亮并接力右列），3 秒成功提示。 */
     private boolean onConfigLongClicked(ConfigNodeBean node) {
         if (node == null) return true;
         if (node.type != ConfigNodeBean.TYPE_CONFIG) return true; // 长按刷新仅配置级
-        restoring = false;
+        restoring = true; // 长按刷新=原地重拉：不清下游选中，填列后由恢复链找回仓库/线路选中
         String url = safeUrl(node.url); // 长按视为选中：高亮与刷新内容一致
         Sel.set("config", url);
         configAdapter.setSelectedUrl(url);
         ConfigRepo.invalidateTree(node.url);
         fetchConfigIntoColumns(node);
+        showTimedToast("刷新缓存成功", 3000);
         return true;
+    }
+
+    /** 显示指定时长的 Toast（LENGTH_LONG 约 3.5 秒，到时主动 cancel 精确控制展示时长）。 */
+    private void showTimedToast(String msg, long durationMs) {
+        final Toast toast = Toast.makeText(getContext(), msg, Toast.LENGTH_LONG);
+        toast.show();
+        new Handler(Looper.getMainLooper()).postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                toast.cancel();
+            }
+        }, durationMs);
     }
 
     /** 拉取配置并按判型填充中/右列（WAREHOUSE=仓列表 / LINE=虚拟仓库+真实线路 / TERMINAL=虚拟仓库+虚拟线路）。 */

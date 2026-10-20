@@ -1,16 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- 列表行焦点态：聚焦亮起为 accent 填充（Apple 选择蓝），常态半透明深灰 -->
 <selector xmlns:android="http://schemas.android.com/apk/res/android">
     <item android:state_focused="true">
         <shape>
             <corners android:radius="10mm" />
-            <stroke android:width="2mm" android:color="@color/color_FFFFFF" />
-            <solid android:color="@color/color_6C3D3D3D" />
+            <solid android:color="#E60A84FF" />
         </shape>
     </item>
     <item android:state_focused="false">
         <shape>
             <corners android:radius="10mm" />
-            <solid android:color="@color/color_6C3D3D3D"/>
+            <solid android:color="#6C3A3A3C"/>
         </shape>
     </item>
 </selector>

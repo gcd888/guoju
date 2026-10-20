@@ -10,6 +10,7 @@ import com.github.tvbox.osc.base.App;
 import com.github.tvbox.osc.server.ControlManager;
 import com.github.tvbox.osc.server.RemoteServer;
 import com.github.tvbox.osc.util.FileUtils;
+import com.github.tvbox.osc.util.LogWriter;
 import com.github.tvbox.osc.util.MD5;
 import com.lzy.okgo.OkGo;
 
@@ -160,24 +161,38 @@ public class JarLoader {
                 source = texts[0];
                 md5 = texts[1].trim();
             }
+            LogWriter.i("echo-drama jar: parseJar key=" + key + " source=" + source + " md5=" + (md5.isEmpty() ? "(none)" : md5));
             aliases.put(jarKey(source), key);
             if (md5.startsWith("http")) {
                 String value = OkHttp.string(md5, null);
                 md5 = value == null ? "" : value.trim();
+                LogWriter.i("echo-drama jar: md5 fetched from url, value=" + (md5.isEmpty() ? "(FAILED, check network)" : md5));
             }
             File file = fileForJar(source);
             if (!TextUtils.isEmpty(md5) && exists(file) && MD5.getFileMd5(file).equalsIgnoreCase(md5)) {
+                LogWriter.i("echo-drama jar: cache hit (md5 match) file=" + file.getAbsolutePath());
                 load(key, file);
             } else if (TextUtils.isEmpty(md5) && exists(file) && !FileUtils.isWeekAgo(file)) {
+                LogWriter.i("echo-drama jar: cache hit (no md5, file fresh) file=" + file.getAbsolutePath());
                 load(key, file);
             } else if (source.startsWith("http")) {
+                if (exists(file)) {
+                    LogWriter.i("echo-drama jar: cache mismatch (md5=" + (TextUtils.isEmpty(md5) ? "expired" : MD5.getFileMd5(file)) + " want=" + md5 + "), re-download");
+                } else {
+                    LogWriter.i("echo-drama jar: no cache, downloading " + source);
+                }
                 load(key, download(source, file));
             } else if (source.startsWith("assets")) {
+                LogWriter.i("echo-drama jar: loading from assets " + source);
                 load(key, copyAsset(source, file));
             } else if (source.startsWith("file")) {
+                LogWriter.i("echo-drama jar: loading from file " + source);
                 load(key, local(source));
             } else if (source.startsWith("clan://")) {
+                LogWriter.i("echo-drama jar: loading from clan " + source);
                 load(key, download(clanToAddress(source), file));
+            } else {
+                LogWriter.i("echo-drama jar: UNSUPPORTED jar protocol, source=" + source + " (jar will fail, SpiderNull will be returned)");
             }
         }
     }
@@ -215,8 +230,14 @@ public class JarLoader {
         try {
             if (!MAIN_KEY.equals(jaKey)) parseJar(jaKey, jar);
             DexClassLoader loader = loaders.get(jaKey);
-            if (loader == null) return new SpiderNull();
-            Spider spider = (Spider) loader.loadClass("com.github.catvod.spider." + className(api)).newInstance();
+            if (loader == null) {
+                LogWriter.i("echo-drama jar: getSpider FAILED, no loader for key=" + jaKey
+                        + " (jar download/parse failed, see parseJar logs) -> SpiderNull");
+                return new SpiderNull();
+            }
+            String cls = "com.github.catvod.spider." + className(api);
+            LogWriter.i("echo-drama jar: getSpider loading class " + cls);
+            Spider spider = (Spider) loader.loadClass(cls).newInstance();
             spider.siteKey = key;
             spider.initApi(new SpiderApi());
             spider.init(App.getInstance(), ext);
@@ -224,7 +245,8 @@ public class JarLoader {
             Log.i(TAG, "getSpider success key=" + spKey);
             return spider;
         } catch (Throwable e) {
-            Log.i(TAG, "getSpider error key=" + spKey + ", msg=" + e.getMessage());
+            LogWriter.i("echo-drama jar: getSpider ERROR key=" + spKey + " api=" + api + ", msg=" + e.getMessage()
+                    + " (class missing? check class name in jar = com.github.catvod.spider." + className(api) + ")");
             e.printStackTrace();
             return new SpiderNull();
         }

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 搜索页背景：hero 默认苹果风壁纸 + 65% 黑色遮罩，保证文字可读 -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item>
+        <bitmap
+            android:src="@drawable/hero_default_bg"
+            android:gravity="fill" />
+    </item>
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="#A6000000" />
+        </shape>
+    </item>
+</layer-list>

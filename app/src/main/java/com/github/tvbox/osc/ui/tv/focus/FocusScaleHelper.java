@@ -1,7 +1,7 @@
 package com.github.tvbox.osc.ui.tv.focus;
 
 import android.view.View;
-import android.view.animation.AccelerateDecelerateInterpolator;
+import android.view.animation.DecelerateInterpolator;
 
 import com.github.tvbox.osc.R;
 import com.github.tvbox.osc.util.ScreenUtils;
@@ -12,8 +12,9 @@ import com.github.tvbox.osc.util.ScreenUtils;
  */
 public final class FocusScaleHelper {
 
-    private static final float DEFAULT_SCALE = 1.1f;
-    private static final long DURATION_MS = 200;
+    // Apple TV 式抬升：轻微放大、快进慢收、无回弹
+    private static final float DEFAULT_SCALE = 1.06f;
+    private static final long DURATION_MS = 180;
 
     private FocusScaleHelper() {
     }
@@ -34,7 +35,7 @@ public final class FocusScaleHelper {
             float target = hasFocus ? scale : 1.0f;
             v.animate().scaleX(target).scaleY(target)
                     .setDuration(DURATION_MS)
-                    .setInterpolator(new AccelerateDecelerateInterpolator())
+                    .setInterpolator(new DecelerateInterpolator())
                     .start();
             v.setTranslationZ(hasFocus
                     ? v.getResources().getDimensionPixelSize(R.dimen.atv_focus_elevation)

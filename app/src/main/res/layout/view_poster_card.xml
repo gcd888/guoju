@@ -9,7 +9,7 @@
     <FrameLayout
         android:layout_width="@dimen/atv_poster_w"
         android:layout_height="@dimen/atv_poster_h"
-        android:background="@color/atv_card">
+        android:background="@drawable/shape_poster_card_bg">
 
         <ImageView
             android:id="@+id/ivPoster"
@@ -23,7 +23,7 @@
             android:layout_height="wrap_content"
             android:layout_gravity="top|end"
             android:layout_margin="@dimen/vs_6"
-            android:background="@color/atv_accent"
+            android:background="@drawable/shape_badge"
             android:paddingLeft="@dimen/vs_8"
             android:paddingRight="@dimen/vs_8"
             android:paddingTop="@dimen/vs_2"

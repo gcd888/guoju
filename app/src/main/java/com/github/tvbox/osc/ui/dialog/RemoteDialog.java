@@ -24,6 +24,10 @@ public class RemoteDialog extends BaseDialog {
         setCanceledOnTouchOutside(false);
         ivQRCode = findViewById(R.id.ivQRCode);
         tvAddress = findViewById(R.id.tvAddress);
+        // 右上角关闭 X：默认聚焦，遥控器确认键直接关闭弹窗
+        ImageView ivClose = findViewById(R.id.ivClose);
+        ivClose.setOnClickListener(v -> dismiss());
+        ivClose.requestFocus();
         refreshQRCode();
     }
 

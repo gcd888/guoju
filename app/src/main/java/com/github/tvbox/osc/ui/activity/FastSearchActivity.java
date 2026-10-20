@@ -12,7 +12,7 @@ import android.text.style.ForegroundColorSpan;
 import android.text.style.RelativeSizeSpan;
 import android.text.style.StyleSpan;
 import android.view.View;
-import android.view.animation.BounceInterpolator;
+import android.view.animation.DecelerateInterpolator;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
@@ -252,7 +252,7 @@ public class FastSearchActivity extends BaseActivity {
                 .scaleX(scale)
                 .scaleY(scale)
                 .setDuration(POSTER_FOCUS_ANIM_DURATION)
-                .setInterpolator(new BounceInterpolator())
+                .setInterpolator(new android.view.animation.DecelerateInterpolator())
                 .start();
     }
 

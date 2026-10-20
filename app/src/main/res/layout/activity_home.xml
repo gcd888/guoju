@@ -44,7 +44,8 @@
         app:layout_constraintRight_toRightOf="parent"
         app:layout_constraintTop_toTopOf="parent">
 
-        <!-- 左半屏 5 tab 均分区：宽度=屏宽/2-安全边距-设置距中轴两个汉字，5 槽 weight 等分 → 间距一致 -->
+        <!-- 左半屏导航均分区：home 图标（=设置的主页）+ 其余三个内容页 + 搜索/配置/设置，
+             主页对应项由代码隐藏，始终 7 槽可见、weight 等分 → 间距一致 -->
         <LinearLayout
             android:layout_width="@dimen/atv_nav_left_w"
             android:layout_height="match_parent"
@@ -79,6 +80,18 @@
                 android:visibility="gone" />
 
             <TextView
+                android:id="@+id/navVod"
+                android:layout_width="@dimen/vs_0"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:background="@drawable/shape_nav_text_focus"
+                android:focusable="true"
+                android:gravity="center"
+                android:text="点播"
+                android:textColor="@color/nav_text_color"
+                android:textSize="@dimen/ts_26" />
+
+            <TextView
                 android:id="@+id/navLive"
                 android:layout_width="@dimen/vs_0"
                 android:layout_height="match_parent"
@@ -87,6 +100,30 @@
                 android:focusable="true"
                 android:gravity="center"
                 android:text="直播"
+                android:textColor="@color/nav_text_color"
+                android:textSize="@dimen/ts_26" />
+
+            <TextView
+                android:id="@+id/navDrama"
+                android:layout_width="@dimen/vs_0"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:background="@drawable/shape_nav_text_focus"
+                android:focusable="true"
+                android:gravity="center"
+                android:text="短剧"
+                android:textColor="@color/nav_text_color"
+                android:textSize="@dimen/ts_26" />
+
+            <TextView
+                android:id="@+id/navMusic"
+                android:layout_width="@dimen/vs_0"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:background="@drawable/shape_nav_text_focus"
+                android:focusable="true"
+                android:gravity="center"
+                android:text="音乐"
                 android:textColor="@color/nav_text_color"
                 android:textSize="@dimen/ts_26" />
 

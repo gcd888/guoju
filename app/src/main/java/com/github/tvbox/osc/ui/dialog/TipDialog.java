@@ -17,6 +17,13 @@ public class TipDialog extends BaseDialog {
         super(context);
         setContentView(R.layout.dialog_tip);
         setCanceledOnTouchOutside(false);
+        // 压暗背景：常叠在配置等弹窗之上，无遮罩时两层面板同为深灰难以分辨
+        android.view.Window w = getWindow();
+        if (w != null) {
+            android.view.WindowManager.LayoutParams lp = w.getAttributes();
+            lp.dimAmount = 0.6f;
+            w.setAttributes(lp);
+        }
         TextView tipInfo = findViewById(R.id.tipInfo);
         TextView leftBtn = findViewById(R.id.leftBtn);
         TextView rightBtn = findViewById(R.id.rightBtn);

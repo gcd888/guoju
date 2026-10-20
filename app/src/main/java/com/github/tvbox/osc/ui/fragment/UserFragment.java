@@ -167,11 +167,14 @@ public class UserFragment extends BaseLazyFragment {
                 tvMeta.setVisibility(View.GONE);
             }
             if (!desc.isEmpty()) {
-                // 简介宽度=真实屏幕一半（AutoSize 改写了 Resources 指标，须 getRealMetrics 取物理宽）
+                // 简介宽度=真实屏幕一半减去左侧安全边距（文字从边距起排，右端正好不超过屏幕中线；
+                // AutoSize 改写了 Resources 指标，须 getRealMetrics 取物理宽）
                 try {
                     android.util.DisplayMetrics dm2 = new android.util.DisplayMetrics();
                     mActivity.getWindowManager().getDefaultDisplay().getRealMetrics(dm2);
-                    tvDesc.setWidth(dm2.widthPixels / 2);
+                    ViewGroup parent = (ViewGroup) tvDesc.getParent();
+                    int side = parent == null ? 0 : parent.getPaddingLeft();
+                    tvDesc.setWidth(dm2.widthPixels / 2 - side);
                 } catch (Throwable ignored) {
                 }
                 tvDesc.setText(desc);

@@ -1,10 +1,19 @@
 <resources>
-    <!-- Base application theme. -->
+    <!-- Apple 风格基座：纯黑底 + iOS 系统蓝 accent + 柔和页面转场 -->
     <style name="AppTheme" parent="Theme.AppCompat.Light.DarkActionBar">
         <!-- Customize your theme here. -->
-        <item name="colorPrimary">@color/color_6200EE</item>
-        <item name="colorPrimaryDark">@color/color_3700B3</item>
-        <item name="colorAccent">@color/color_03DAC5</item>
+        <item name="colorPrimary">@color/atv_bg</item>
+        <item name="colorPrimaryDark">@color/atv_bg</item>
+        <item name="colorAccent">@color/atv_accent</item>
+        <item name="android:windowAnimationStyle">@style/AtvWindowAnimation</item>
+    </style>
+
+    <!-- 页面转场：轻微缩放淡入淡出，进出场同路径对称 -->
+    <style name="AtvWindowAnimation">
+        <item name="android:activityOpenEnterAnimation">@anim/atv_open_enter</item>
+        <item name="android:activityOpenExitAnimation">@anim/atv_open_exit</item>
+        <item name="android:activityCloseEnterAnimation">@anim/atv_close_enter</item>
+        <item name="android:activityCloseExitAnimation">@anim/atv_close_exit</item>
     </style>
 
     <style name="AppTheme.NoActionBar" parent="AppTheme">
@@ -16,7 +25,8 @@
         <item name="windowNoTitle">true</item>
         <item name="android:keepScreenOn">true</item>
         <!--        <item name="android:windowBackground">@drawable/main_bg</item>-->
-        <item name="android:windowBackground">@android:color/transparent</item>
+        <!-- 实色黑启动窗：避免冷启动瞬间透出桌面缓存的旧横幅 -->
+        <item name="android:windowBackground">@color/atv_bg</item>
     </style>
     <!-- 自定义dialog样式 -->
     <style name="CustomDialogStyle" parent="@android:style/Theme.Dialog">

@@ -64,7 +64,8 @@ public abstract class BaseActivity extends AppCompatActivity implements CustomAd
         try {
             if (screenRatio < 0) {
                 DisplayMetrics dm = new DisplayMetrics();
-                getWindowManager().getDefaultDisplay().getMetrics(dm);
+                // getRealMetrics：getMetrics 息屏恢复后返回兼容缩放值，比例虽不变但口径统一更稳
+                getWindowManager().getDefaultDisplay().getRealMetrics(dm);
                 updateScreenRatio(dm);
             }
         } catch (Throwable th) {
@@ -150,14 +151,18 @@ public abstract class BaseActivity extends AppCompatActivity implements CustomAd
     private void refreshAutoSize() {
         try {
             DisplayMetrics dm = new DisplayMetrics();
-            getWindowManager().getDefaultDisplay().getMetrics(dm);
+            getWindowManager().getDefaultDisplay().getRealMetrics(dm);
             if (dm.widthPixels <= 0 || dm.heightPixels <= 0) {
                 return;
             }
             updateScreenRatio(dm);
+            // 本 App 锁定横屏，AutoSize 适配基准宽（isBaseOnWidth）= 长边。息屏瞬间
+            // Display 切回自然方向，解锁后立即读可能拿到竖屏口径(1440x3200)——若照实
+            // 写入 screenWidth=1440，全部 mm 尺寸按 1440 基准换算 → 字体/布局整体缩小。
+            // 归一化：长边恒为 screenWidth、短边恒为 screenHeight，任何时刻读取都稳定。
             AutoSizeConfig.getInstance()
-                    .setScreenWidth(dm.widthPixels)
-                    .setScreenHeight(dm.heightPixels);
+                    .setScreenWidth(Math.max(dm.widthPixels, dm.heightPixels))
+                    .setScreenHeight(Math.min(dm.widthPixels, dm.heightPixels));
             AutoSizeCompat.autoConvertDensityOfCustomAdapt(super.getResources(), this);
             getWindow().getDecorView().requestLayout();
         } catch (Throwable th) {

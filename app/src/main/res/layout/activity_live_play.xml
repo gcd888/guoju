@@ -461,7 +461,7 @@
 					android:layout_width="@dimen/vs_180"
 					android:layout_height="@dimen/vs_60"
 					android:layout_gravity="center"
-					android:src="@drawable/app_banner"
+					android:src="@drawable/app_icon"
 					android:scaleType="centerInside" />
 
 			</FrameLayout>

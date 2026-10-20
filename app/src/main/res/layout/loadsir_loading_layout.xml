@@ -1,13 +1,39 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- 统一加载态：纯黑底 + 品牌图标 + 转圈 + 文案（覆盖直播/详情等所有 LoadSir 页面） -->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
-    android:layout_height="match_parent">
+    android:layout_height="match_parent"
+    android:background="@color/atv_bg">
 
-    <ProgressBar
-        android:layout_width="@dimen/vs_50"
-        android:layout_height="@dimen/vs_50"
+    <LinearLayout
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
         android:layout_gravity="center"
-        android:indeterminateBehavior="repeat"
-        android:indeterminateDrawable="@drawable/anim_loading"
-        android:indeterminateOnly="true" />
+        android:gravity="center_horizontal"
+        android:orientation="vertical">
+
+        <ImageView
+            android:layout_width="@dimen/vs_100"
+            android:layout_height="@dimen/vs_100"
+            android:alpha="0.85"
+            android:src="@drawable/app_icon" />
+
+        <ProgressBar
+            android:layout_width="@dimen/vs_50"
+            android:layout_height="@dimen/vs_50"
+            android:layout_gravity="center_horizontal"
+            android:layout_marginTop="@dimen/vs_20"
+            android:indeterminateBehavior="repeat"
+            android:indeterminateDrawable="@drawable/anim_loading"
+            android:indeterminateOnly="true" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/vs_15"
+            android:text="正在加载…"
+            android:textColor="@color/atv_text_secondary"
+            android:textSize="@dimen/ts_20" />
+    </LinearLayout>
+
 </FrameLayout>

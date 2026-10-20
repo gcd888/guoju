@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- TipDialog 确认按钮：蓝色实底高亮，与灰色取消按钮一眼区分 -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android">
+    <corners android:radius="@dimen/vs_5" />
+    <solid android:color="@color/dialog_tip_btn_primary" />
+</shape>

@@ -102,6 +102,7 @@ public class ModelSettingFragment extends BaseLazyFragment {
     private boolean selectLocalLive;
     private TextView tvDanmuOpenText;
     private TextView tvDanmuApiText;
+    private TextView tvVersionText;
 
     public static ModelSettingFragment newInstance() {
         return new ModelSettingFragment().setArguments();
@@ -167,7 +168,7 @@ public class ModelSettingFragment extends BaseLazyFragment {
         tvRender.setText(PlayerHelper.getRenderName(Hawk.get(HawkConfig.PLAY_RENDER, 0)));
         tvIjkCachePlay.setText(Hawk.get(HawkConfig.IJK_CACHE_PLAY, false) ? "开启" : "关闭");
         tvHomeDefaultShow = findViewById(R.id.tvHomeText);
-        tvHomeDefaultShow.setText(Hawk.get(HawkConfig.DEFAULT_LOAD_LIVE, false) ? "直播" : "点播");
+        tvHomeDefaultShow.setText(HawkConfig.homePageName(HawkConfig.getHomePage()));
         findViewById(R.id.llDebug).setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -615,7 +616,6 @@ public class ModelSettingFragment extends BaseLazyFragment {
                 ArrayList<Integer> types = new ArrayList<>();
                 types.add(0);
                 types.add(1);
-                types.add(2);
                 SelectDialog<Integer> dialog = new SelectDialog<>(mActivity);
                 dialog.setTip("请选择首页列表数据");
                 dialog.setAdapter(new SelectDialogAdapter.SelectDialogInterface<Integer>() {
@@ -798,18 +798,77 @@ public class ModelSettingFragment extends BaseLazyFragment {
             }
         });
 
-        //下次进入
+        //主页：弹窗选择 点播/直播/短剧/音乐（打开 app 展示对应页面）
         findViewById(R.id.tvHomeLive).setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
                 FastClickCheckUtil.check(v);
-                Hawk.put(HawkConfig.DEFAULT_LOAD_LIVE, !Hawk.get(HawkConfig.DEFAULT_LOAD_LIVE, false));
-                tvHomeDefaultShow.setText(Hawk.get(HawkConfig.DEFAULT_LOAD_LIVE, false) ? "直播" : "点播");
+                int defaultPos = HawkConfig.getHomePage();
+                ArrayList<Integer> types = new ArrayList<>();
+                for (int i = 0; i < 4; i++) types.add(i);
+                SelectDialog<Integer> dialog = new SelectDialog<>(mActivity);
+                dialog.setTip("请选择主页页面");
+                dialog.setAdapter(new SelectDialogAdapter.SelectDialogInterface<Integer>() {
+                    @Override
+                    public void click(Integer value, int pos) {
+                        Hawk.put(HawkConfig.HOME_PAGE, value);
+                        tvHomeDefaultShow.setText(HawkConfig.homePageName(value));
+                    }
+
+                    @Override
+                    public String getDisplay(Integer val) {
+                        return HawkConfig.homePageName(val);
+                    }
+                }, new DiffUtil.ItemCallback<Integer>() {
+                    @Override
+                    public boolean areItemsTheSame(@NonNull @NotNull Integer oldItem, @NonNull @NotNull Integer newItem) {
+                        return oldItem.intValue() == newItem.intValue();
+                    }
+
+                    @Override
+                    public boolean areContentsTheSame(@NonNull @NotNull Integer oldItem, @NonNull @NotNull Integer newItem) {
+                        return oldItem.intValue() == newItem.intValue();
+                    }
+                }, types, defaultPos);
+                dialog.show();
             }
         });
 
         findViewById(R.id.llIjkCachePlay).setOnClickListener((view -> onClickIjkCachePlay(view)));
         findViewById(R.id.llClearCache).setOnClickListener((view -> onClickClearCache(view)));
+
+        // 版本栏：展示当前版本号，点击查看打包时间等详情（后续在此扩展推送更新）
+        tvVersionText = findViewById(R.id.tvVersionText);
+        tvVersionText.setText(getVersionName());
+        findViewById(R.id.llVersion).setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                FastClickCheckUtil.check(v);
+                String buildTime;
+                try {
+                    buildTime = com.github.tvbox.osc.BuildConfig.BUILD_TIME;
+                } catch (Throwable ignored) {
+                    buildTime = "未知";
+                }
+                Toast.makeText(mContext, "版本 " + getVersionName() + " (" + getVersionCode() + ")\n打包时间 " + buildTime, Toast.LENGTH_LONG).show();
+            }
+        });
+    }
+
+    private String getVersionName() {
+        try {
+            return mContext.getPackageManager().getPackageInfo(mContext.getPackageName(), 0).versionName;
+        } catch (Throwable e) {
+            return "";
+        }
+    }
+
+    private int getVersionCode() {
+        try {
+            return mContext.getPackageManager().getPackageInfo(mContext.getPackageName(), 0).versionCode;
+        } catch (Throwable e) {
+            return 0;
+        }
     }
 
     private void restartAppAfterConfigChanged() {
@@ -1097,7 +1156,7 @@ public class ModelSettingFragment extends BaseLazyFragment {
         } else if (type == 2) {
             return "观看历史";
         } else {
-            return "豆瓣热播";
+            return "果剧热播";
         }
     }
 

@@ -1,11 +1,37 @@
 package com.github.tvbox.osc.util;
 
+import com.orhanobut.hawk.Hawk;
+
 /**
  * @author pj567
  * @date :2020/12/23
  * @description:
  */
 public class HawkConfig {
+    /** 读取主页设置（0=点播 1=直播 2=短剧 3=音乐）；旧版 DEFAULT_LOAD_LIVE=true 自动迁移为直播 */
+    public static int getHomePage() {
+        int page = Hawk.get(HOME_PAGE, -1);
+        if (page < 0 || page > 3) {
+            page = Hawk.get(DEFAULT_LOAD_LIVE, false) ? 1 : 0;
+            Hawk.put(HOME_PAGE, page);
+        }
+        return page;
+    }
+
+    /** 主页/导航项名称：0=点播 1=直播 2=短剧 3=音乐 */
+    public static String homePageName(int page) {
+        switch (page) {
+            case 1:
+                return "直播";
+            case 2:
+                return "短剧";
+            case 3:
+                return "音乐";
+            default:
+                return "点播";
+        }
+    }
+
     public static final String API_URL = "api_url";
     public static final String EPG_URL = "epg_url";
     public static final String SHOW_PREVIEW = "show_preview";
@@ -57,7 +83,9 @@ public class HawkConfig {
     public static final String AUTO_SWITCH_LINE = "auto_switch_line";
     public static final String SCREEN_DISPLAY = "screen_display";
     public static final String LIVE_WEB_HEADER = "live_web_header";
-    public static final String DEFAULT_LOAD_LIVE = "DEFAULT_LOAD_LIVE";
+    public static final String DEFAULT_LOAD_LIVE = "DEFAULT_LOAD_LIVE"; // 旧版布尔(仅直播/点播)，已被 HOME_PAGE 取代
+    /** 主页设置：0=点播 1=直播 2=短剧 3=音乐，打开 app 展示对应页面 */
+    public static final String HOME_PAGE = "HOME_PAGE";
     public static final String SEARCH_HISTORY = "search_history";
     public static final String DANMU_OPEN = "danmu_open";
     public static final String DANMU_MAX_LINE = "danmu_max_line";
@@ -69,5 +97,6 @@ public class HawkConfig {
     public static final String CONFIG_LIST = "config_list"; // 配置弹窗推送配置列表 [{name,url}]
     public static final String CONFIG_ACTIVE = "config_active"; // 当前生效线路 url（弹窗✓回显）
     public static final String CONFIG_SEL = "config_sel"; // 配置弹窗三列选中状态包 {config,warehouse,line}
+    public static final String DRAMA_HOME = "drama_home"; // 短剧页当前源 key
     public static boolean hotVodDelete;
 }

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- TipDialog 专用面板：比 dialog_panel_bg 更亮更实 + 高亮描边，叠在配置等弹窗之上时层次分明 -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android">
+    <corners android:radius="@dimen/vs_10" />
+    <solid android:color="@color/dialog_tip_bg" />
+    <stroke
+        android:width="@dimen/vs_1"
+        android:color="@color/dialog_tip_stroke" />
+</shape>

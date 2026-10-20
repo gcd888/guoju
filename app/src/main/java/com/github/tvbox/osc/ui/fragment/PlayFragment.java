@@ -77,6 +77,7 @@ import com.github.tvbox.osc.util.DefaultConfig;
 import com.github.tvbox.osc.util.FileUtils;
 import com.github.tvbox.osc.util.HawkConfig;
 import com.github.tvbox.osc.util.ImgUtil;
+import com.github.tvbox.osc.util.LogWriter;
 import com.github.tvbox.osc.util.LOG;
 import com.github.tvbox.osc.util.MD5;
 import com.github.tvbox.osc.util.PlayerHelper;
@@ -306,6 +307,7 @@ public class PlayFragment extends BaseLazyFragment {
         mVideoView.addOnStateChangeListener(new VideoView.SimpleOnStateChangeListener() {
             @Override
             public void onPlayStateChanged(int playState) {
+                LogWriter.i("echo-play page: player state " + playState + " url=" + (webPlayUrl == null ? "(null)" : webPlayUrl.substring(0, Math.min(100, webPlayUrl.length()))));
                 if (webPlayUrl != null && isStartedPlayState(playState)) {
                     markPlaybackStarted();
                     hideTipOnUiThread();
@@ -964,6 +966,7 @@ public class PlayFragment extends BaseLazyFragment {
             return;
         }
         if (url.startsWith("http://127.0.0.1") || !url.contains(".m3u8")) {
+            LogWriter.i("echo-play page: playUrl direct (local proxy or non-m3u8)");
             goPlayUrl(url,headers);
             return;
         }
@@ -971,11 +974,11 @@ public class PlayFragment extends BaseLazyFragment {
             goPlayUrl(url,headers);
             return;
         }
-        LOG.i("echo-playM3u8:" + url);
+        LogWriter.i("echo-play page: playUrl m3u8 purify path");
         mController.playM3u8(url,headers);
     }
     public void goPlayUrl(String url, HashMap<String, String> headers) {
-        LOG.i("echo-goPlayUrl:" + url);
+        LogWriter.i("echo-play page: goPlayUrl " + url);
         if (TextUtils.isEmpty(url)) {
             handleResolvePlayUrlFailed("获取播放地址为空");
             return;
@@ -1192,7 +1195,10 @@ public class PlayFragment extends BaseLazyFragment {
                 if (info != null) {
                     try {
                         if (isStalePlayResult(info)) {
-                            LOG.i("echo-ignore stale play result");
+                            LogWriter.e("echo-play page: playResult DROPPED as stale (flag=" + info.optString("flag")
+                                    + " key=" + info.optString("key") + " proKey=" + info.optString("proKey")
+                                    + " currentPlayFlag=" + (mVodInfo == null ? "null" : mVodInfo.playFlag)
+                                    + " currentProgressKey=" + progressKey + ")");
                             return;
                         }
                         mHandler.removeMessages(MSG_RESOLVE_PLAY_URL_TIMEOUT);

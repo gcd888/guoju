@@ -17,7 +17,6 @@ import android.view.ViewGroup;
 import android.view.animation.AccelerateInterpolator;
 import android.view.animation.AlphaAnimation;
 import android.view.animation.Animation;
-import android.view.animation.BounceInterpolator;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.TextView;
@@ -206,9 +205,9 @@ public class HomeActivity extends BaseActivity {
                                 TextView textView = view.findViewById(R.id.tvTitle);
                                 textView.getPaint().setFakeBoldText(false);
                                 if (sortFocused == p) {
-                                    view.animate().scaleX(1.1f).scaleY(1.1f).setInterpolator(new BounceInterpolator()).setDuration(300).start();
+                                    view.animate().scaleX(1.05f).scaleY(1.05f).setDuration(180).start();
                                 } else {
-                                    view.animate().scaleX(1.0f).scaleY(1.0f).setDuration(300).start();
+                                    view.animate().scaleX(1.0f).scaleY(1.0f).setDuration(180).start();
                                     view.findViewById(R.id.tvFilter).setVisibility(View.GONE);
                                     view.findViewById(R.id.tvFilterColor).setVisibility(View.GONE);
                                 }
@@ -225,7 +224,7 @@ public class HomeActivity extends BaseActivity {
                     HomeActivity.this.currentView = view;
                     HomeActivity.this.isDownOrUp = false;
                     HomeActivity.this.sortChange = true;
-                    view.animate().scaleX(1.1f).scaleY(1.1f).setInterpolator(new BounceInterpolator()).setDuration(300).start();
+                    view.animate().scaleX(1.05f).scaleY(1.05f).setDuration(180).start();
                     TextView textView = view.findViewById(R.id.tvTitle);
                     textView.getPaint().setFakeBoldText(true);
                     textView.invalidate();
@@ -348,7 +347,7 @@ public class HomeActivity extends BaseActivity {
 
     private boolean skipNextUpdate = false;
 
-    /** 顶部导航：Home 图标/直播/搜索/推送/收藏/设置（历史入口在推荐行尾部）。 */
+    /** 顶部导航：home 图标(=设置的主页)/点播/直播/短剧/音乐/搜索/配置/设置，主页对应项隐藏。 */
     private void initTopNav() {
         View.OnClickListener listener = new View.OnClickListener() {
             @Override
@@ -356,9 +355,16 @@ public class HomeActivity extends BaseActivity {
                 FastClickCheckUtil.check(v);
                 int id = v.getId();
                 if (id == R.id.navHome) {
+                    // home 图标 = 用户设置的「主页」页面
+                    jumpToHomePage();
+                } else if (id == R.id.navVod) {
                     backToHome();
                 } else if (id == R.id.navLive) {
                     jumpActivity(LivePlayActivity.class);
+                } else if (id == R.id.navDrama) {
+                    jumpDrama();
+                } else if (id == R.id.navMusic) {
+                    jumpKeywordSearch("音乐");
                 } else if (id == R.id.navSearch) {
                     jumpActivity(SearchActivity.class);
                 } else if (id == R.id.navPush) {
@@ -369,23 +375,72 @@ public class HomeActivity extends BaseActivity {
                 }
             }
         };
-        int[] navIds = {R.id.navHome, R.id.navLive, R.id.navSearch, R.id.navPush, R.id.navSetting};
+        int[] navIds = {R.id.navHome, R.id.navVod, R.id.navLive, R.id.navDrama, R.id.navMusic,
+                R.id.navSearch, R.id.navPush, R.id.navSetting};
         for (int navId : navIds) {
             View nav = findViewById(navId);
             nav.setOnClickListener(listener);
             FocusScaleHelper.bind(nav);
         }
-        // 站源切换入口：长按 Home 图标（原顶栏站源名的长按功能）
+        // 站源切换入口：长按 Home 图标。必须无条件消费长按（showSiteSwitch 内部自带
+        // 未就绪保护）；若返回 false，抬起时会触发单击跳转主页Tab，长按形同失效
         findViewById(R.id.navHome).setOnLongClickListener(new View.OnLongClickListener() {
             @Override
             public boolean onLongClick(View v) {
-                if (dataInitOk && jarInitOk) {
-                    showSiteSwitch();
-                    return true;
-                }
-                return false;
+                showSiteSwitch();
+                return true;
             }
         });
+        applyNavHomePage();
+    }
+
+    /** 按「主页」设置显隐导航项：主页自身由 home 图标代表，其余内容页依次排列。 */
+    private void applyNavHomePage() {
+        int home = HawkConfig.getHomePage();
+        int[] pageIds = {R.id.navVod, R.id.navLive, R.id.navDrama, R.id.navMusic};
+        for (int i = 0; i < pageIds.length; i++) {
+            View v = findViewById(pageIds[i]);
+            if (v != null) v.setVisibility(i == home ? View.GONE : View.VISIBLE);
+        }
+    }
+
+    /** 跳转用户设置的「主页」页面：0=点播 1=直播 2=短剧 3=音乐（打开 app 也走这里）。 */
+    private void jumpToHomePage() {
+        int home = HawkConfig.getHomePage();
+        if (home == 1) {
+            jumpActivity(LivePlayActivity.class);
+        } else if (home == 2) {
+            jumpDrama();
+        } else if (home == 3) {
+            jumpKeywordSearch("音乐");
+        } else {
+            backToHome();
+        }
+    }
+
+    /** 短剧入口：配置里有 dramas 源时进独立短剧页，否则退回旧的关键词聚合搜索。 */
+    private void jumpDrama() {
+        int dramaCount = ApiConfig.get().getDramaBeanList().size();
+        LOG.i("echo-drama entry: jumpDrama dramas=" + dramaCount
+                + (dramaCount > 0 ? " -> DramaActivity" : " -> keyword search fallback (no dramas in config)"));
+        if (dramaCount > 0) {
+            jumpActivity(DramaActivity.class);
+        } else {
+            jumpKeywordSearch("短剧");
+        }
+    }
+
+    /** 关键词聚合入口（短剧/音乐 tab）：按搜索模式设置跳对应搜索页并自动搜索。 */
+    private void jumpKeywordSearch(String keyword) {
+        Intent newIntent;
+        if (Hawk.get(HawkConfig.FAST_SEARCH_MODE, true)) {
+            newIntent = new Intent(this, FastSearchActivity.class);
+        } else {
+            newIntent = new Intent(this, SearchActivity.class);
+        }
+        newIntent.putExtra("title", keyword);
+        newIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+        startActivity(newIntent);
     }
 
     /** tab 行固定页：观看历史 / 我的收藏，固定排在「推荐」后面，站源分类 tab 依次后移。 */
@@ -472,9 +527,8 @@ public class HomeActivity extends BaseActivity {
             } else {
                 LOG.e("无");
             }
-            if (!useCacheConfig && Hawk.get(HawkConfig.DEFAULT_LOAD_LIVE, false)) {
-                jumpActivity(LivePlayActivity.class);
-            }
+            // 打开 app 展示用户设置的「主页」页面（点播/直播/短剧/音乐）
+            jumpToHomePage();
             //爬虫预热 仅首次加载
             if(!useCacheConfig)warmSearchSpidersOnce();
             return;
@@ -821,6 +875,8 @@ public class HomeActivity extends BaseActivity {
     @Override
     protected void onResume() {
         super.onResume();
+        // 设置页可能改了「主页」，回来时同步导航显隐
+        applyNavHomePage();
         refreshTopInfoTextSize();
         mHandler.removeCallbacks(refreshTopInfoTextSizeRunnable);
         mHandler.postDelayed(refreshTopInfoTextSizeRunnable, 350);
@@ -1105,7 +1161,8 @@ public class HomeActivity extends BaseActivity {
                             AutoSizeUtils.mm2px(this.mContext, 30.0f),
                             AutoSizeUtils.mm2px(this.mContext, 1.0f)),
                     ObjectAnimator.ofFloat(this.topLayout, "alpha", 1.0f, 0.0f));
-            animatorSet.setDuration(200);
+            animatorSet.setDuration(240);
+            animatorSet.setInterpolator(new android.view.animation.AccelerateInterpolator());
             animatorSet.start();
             return;
         }
@@ -1117,7 +1174,8 @@ public class HomeActivity extends BaseActivity {
                             AutoSizeUtils.mm2px(this.mContext, 1.0f),
                             AutoSizeUtils.mm2px(this.mContext, 30.0f)),
                     ObjectAnimator.ofFloat(this.topLayout, "alpha", 0.0f, 1.0f));
-            animatorSet.setDuration(200);
+            animatorSet.setDuration(240);
+            animatorSet.setInterpolator(new android.view.animation.DecelerateInterpolator());
             animatorSet.start();
         }
     }
@@ -1128,7 +1186,8 @@ public class HomeActivity extends BaseActivity {
             return;
         }
         float target = AutoSizeUtils.mm2px(this.mContext, gridExpanded ? 30.0f : 300.0f);
-        mGridView.animate().translationY(target).setDuration(200).start();
+        mGridView.animate().translationY(target).setDuration(240)
+                .setInterpolator(new android.view.animation.DecelerateInterpolator()).start();
     }
 
     @Override

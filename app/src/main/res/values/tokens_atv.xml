@@ -42,8 +42,8 @@
     <!-- 顶部悬浮导航栏高 -->
     <dimen name="atv_nav_h">30mm</dimen>
 
-    <!-- 顶栏 5 tab 均分区宽度：屏宽/2(640) - 左安全边距(60) - 「设置」距中轴两个汉字(52, ts_26×2) -->
-    <dimen name="atv_nav_left_w">528mm</dimen>
+    <!-- 左半屏导航宽：5 槽 528 → 7 槽（+短剧/音乐）580，上限=屏宽/2-安全边距，不侵入系统状态栏区 -->
+    <dimen name="atv_nav_left_w">580mm</dimen>
 
     <!-- 焦点 -->
     <dimen name="atv_focus_elevation">4mm</dimen>

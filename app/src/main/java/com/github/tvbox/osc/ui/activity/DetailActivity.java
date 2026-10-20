@@ -51,6 +51,7 @@ import com.github.tvbox.osc.util.DefaultConfig;
 import com.github.tvbox.osc.util.FastClickCheckUtil;
 import com.github.tvbox.osc.util.HawkConfig;
 import com.github.tvbox.osc.util.LOG;
+import com.github.tvbox.osc.util.LogWriter;
 import com.github.tvbox.osc.util.MD5;
 import com.github.tvbox.osc.util.SearchHelper;
 import com.github.tvbox.osc.util.SubtitleHelper;
@@ -1048,7 +1049,11 @@ public class DetailActivity extends BaseActivity {
         vodId = vid;
         sourceKey = key;
         firstsourceKey = key;
+        LogWriter.i("echo-detail page: loadDetail id=" + vid + " sourceKey=" + key
+                + " sourceFound=" + (ApiConfig.get().getSource(key) != null) + " fallback=" + fallback);
         if (TextUtils.isEmpty(vid) || vid.startsWith("msearch:") || ApiConfig.get().getSource(sourceKey) == null) {
+            LogWriter.e("echo-detail page: loadDetail GUARD HIT (vidEmpty=" + TextUtils.isEmpty(vid)
+                    + " sourceNotFound=" + (ApiConfig.get().getSource(sourceKey) == null) + ") -> 暂无内容");
             handleNoPlayableDetail();
             return;
         }
@@ -1069,6 +1074,8 @@ public class DetailActivity extends BaseActivity {
     }
 
     private void handleEmptyDetail(AbsXml data) {
+        LogWriter.e("echo-detail page: detail EMPTY from source key=" + sourceKey
+                + " msg=" + (data == null ? "(null)" : data.msg));
         boolean shouldFinish = data != null && !TextUtils.isEmpty(data.msg);
         if (shouldFinish || fromCollect) {
             resetDetailFallback();
@@ -1479,6 +1486,7 @@ public class DetailActivity extends BaseActivity {
     }
 
     private void showDetailEmpty() {
+        LogWriter.e("echo-detail page: showDetailEmpty (暂无内容) key=" + sourceKey + " id=" + vodId);
         showEmpty();
         llPlayerFragmentContainer.setVisibility(View.GONE);
         llPlayerFragmentContainerBlock.setVisibility(View.GONE);

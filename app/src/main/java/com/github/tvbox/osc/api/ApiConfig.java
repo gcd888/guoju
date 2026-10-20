@@ -14,6 +14,7 @@ import com.github.catvod.crawler.JarLoader;
 import com.github.catvod.crawler.JsLoader;
 import com.github.catvod.crawler.pyLoader;
 import com.github.catvod.crawler.Spider;
+import com.github.catvod.crawler.SpiderNull;
 import com.github.catvod.crawler.python.IPyLoader;
 import com.github.tvbox.osc.base.App;
 import com.github.tvbox.osc.bean.LiveChannelGroup;
@@ -32,6 +33,7 @@ import com.github.tvbox.osc.util.FileUtils;
 import com.github.tvbox.osc.util.HawkConfig;
 import com.github.tvbox.osc.util.HistoryHelper;
 import com.github.tvbox.osc.util.LOG;
+import com.github.tvbox.osc.util.LogWriter;
 import com.github.tvbox.osc.util.M3u8;
 import com.github.tvbox.osc.util.MD5;
 import com.github.tvbox.osc.util.OkGoHelper;
@@ -75,6 +77,7 @@ import java.util.regex.Pattern;
 public class ApiConfig {
     private static ApiConfig instance;
     private final LinkedHashMap<String, SourceBean> sourceBeanList;
+    private final LinkedHashMap<String, SourceBean> dramaBeanList;
     private SourceBean mHomeSource;
     private ParseBean mDefaultParse;
     private final List<LiveChannelGroup> liveChannelGroupList;
@@ -107,6 +110,7 @@ public class ApiConfig {
     private ApiConfig() {
         clearLoader();
         sourceBeanList = new LinkedHashMap<>();
+        dramaBeanList = new LinkedHashMap<>();
         liveChannelGroupList = new ArrayList<>();
         parseBeanList = new ArrayList<>();
         searchSourceBeanList = new ArrayList<>();
@@ -719,6 +723,7 @@ public class ApiConfig {
         clearSpiderCache();
         currentPlaySourceKey = "";
         sourceBeanList.clear();
+        dramaBeanList.clear();
         liveChannelGroupList.clear();
         parseBeanList.clear();
         searchSourceBeanList = new ArrayList<>();
@@ -791,6 +796,43 @@ public class ApiConfig {
             else
                 setSourceBean(sh);
         }
+        // 短剧源段（可选）：字段语义与 sites 一致，独立于点播站源列表
+        dramaBeanList.clear();
+        if (infoJson.has("dramas")) {
+            LogWriter.i("echo-drama config: found dramas section");
+            for (JsonElement opt : infoJson.get("dramas").getAsJsonArray()) {
+                JsonObject obj = (JsonObject) opt;
+                if (!obj.has("key") || !obj.has("type") || !obj.has("api")) {
+                    LogWriter.i("echo-drama config: skip incomplete entry (need key/type/api): " + obj);
+                    continue;
+                }
+                SourceBean sb = new SourceBean();
+                String dramaKey = obj.get("key").getAsString().trim();
+                sb.setKey(dramaKey);
+                sb.setName(obj.has("name") ? obj.get("name").getAsString().trim() : dramaKey);
+                sb.setType(obj.get("type").getAsInt());
+                sb.setApi(obj.get("api").getAsString().trim());
+                sb.setSearchable(DefaultConfig.safeJsonInt(obj, "searchable", 1));
+                sb.setQuickSearch(DefaultConfig.safeJsonInt(obj, "quickSearch", 0));
+                sb.setChangeable(DefaultConfig.safeJsonInt(obj, "changeable", 1));
+                sb.setFilterable(DefaultConfig.safeJsonInt(obj, "filterable", 0));
+                sb.setPlayerUrl(DefaultConfig.safeJsonString(obj, "playUrl", ""));
+                sb.setExt(obj.has("ext") && obj.get("ext").isJsonObject() ? obj.get("ext").toString() : DefaultConfig.safeJsonString(obj, "ext", ""));
+                sb.setJar(DefaultConfig.safeJsonString(obj, "jar", ""));
+                sb.setPlayerType(DefaultConfig.safeJsonInt(obj, "playerType", 2));
+                sb.setCategories(DefaultConfig.safeJsonStringList(obj, "categories"));
+                sb.setTimeout(DefaultConfig.safeJsonInt(obj, "timeout", 0));
+                sb.setClickSelector(DefaultConfig.safeJsonString(obj, "click", ""));
+                sb.setStyle(DefaultConfig.safeJsonString(obj, "style", "drama"));
+                dramaBeanList.put(dramaKey, sb);
+                LogWriter.i("echo-drama config: parsed key=" + sb.getKey() + " name=" + sb.getName()
+                        + " type=" + sb.getType() + " api=" + sb.getApi()
+                        + " jar=" + (sb.getJar().isEmpty() ? "(global spider)" : sb.getJar()));
+            }
+        } else {
+            LogWriter.i("echo-drama config: no dramas section in config (drama entry falls back to keyword search)");
+        }
+        LogWriter.i("echo-drama config: total dramas=" + dramaBeanList.size());
         // 需要使用vip解析的flag
         vipParseFlags = DefaultConfig.safeJsonStringList(infoJson, "flags");
         // 解析地址
@@ -1454,6 +1496,8 @@ public class ApiConfig {
     }
 
     public Spider getCSP(SourceBean sourceBean) {
+        LogWriter.i("echo-drama csp: get spider key=" + sourceBean.getKey() + " type=" + sourceBean.getType()
+                + " api=" + sourceBean.getApi() + " jar=" + (sourceBean.getJar().isEmpty() ? "(global)" : sourceBean.getJar()));
         if (sourceBean.getApi().endsWith(".js") || sourceBean.getApi().contains(".js?")){
             currentPyKey = "";
             return jsLoader.getSpider(sourceBean.getKey(), sourceBean.getApi(), sourceBean.getExt(), sourceBean.getJar());
@@ -1465,7 +1509,12 @@ public class ApiConfig {
         }
         else {
             currentPyKey = "";
-            return jarLoader.getSpider(sourceBean.getKey(), sourceBean.getApi(), sourceBean.getExt(), sourceBean.getJar());
+            Spider spider = jarLoader.getSpider(sourceBean.getKey(), sourceBean.getApi(), sourceBean.getExt(), sourceBean.getJar());
+            if (spider instanceof SpiderNull) {
+                LogWriter.e("echo-drama csp: SPIDER NULL for key=" + sourceBean.getKey()
+                        + " api=" + sourceBean.getApi() + " (jar failed to load or class missing, see JarLoader logs above)");
+            }
+            return spider;
         }
     }
 
@@ -1566,22 +1615,39 @@ public class ApiConfig {
                 && !isApiJs
                 && !isApiPy;
 
+        LogWriter.i("echo-drama proxy: enter siteKey=" + siteKey + " do=" + action
+                + " sourceKey=" + source.getKey() + " sourceType=" + source.getType()
+                + " range=" + param.get("__range")
+                + " canUseType3=" + canUseType3 + (canUseType3 ? "" : " (js=" + isJs + " py=" + isPy + " live=" + isLive + " apiJs=" + isApiJs + " apiPy=" + isApiPy + ")"));
+
         if (canUseType3) {
             try {
                 Spider spider = getCSP(source);
 
                 Object[] result = spider.proxy(param);
-                if (result != null) return result;
+                if (result != null) {
+                    LogWriter.i("echo-drama proxy: spider.proxy ok code=" + result[0]);
+                    return result;
+                }
+                LogWriter.i("echo-drama proxy: spider.proxy returned null, try jarLoader.proxyInvoke");
 
                 result = jarLoader.proxyInvoke(param);
-                if (result != null) return result;
+                if (result != null) {
+                    LogWriter.i("echo-drama proxy: jarLoader.proxyInvoke ok code=" + result[0]);
+                    return result;
+                }
+                LogWriter.i("echo-drama proxy: jarLoader.proxyInvoke null, try proxyDirect");
 
                 result = proxyDirect(param);
-                if (result != null) return result;
+                if (result != null) {
+                    LogWriter.i("echo-drama proxy: proxyDirect ok");
+                    return result;
+                }
 
+                LogWriter.e("echo-drama proxy: ALL proxy paths returned null (spider/jarLoader/proxyDirect), player will get 500");
                 return null;
             } catch (Throwable th) {
-                LOG.e("echo-proxy siteKey error: " + th.getMessage());
+                LogWriter.e("echo-drama proxy: siteKey=" + siteKey + " error: " + th.getMessage());
                 return null;
             }
         }
@@ -1638,9 +1704,14 @@ public class ApiConfig {
         if (TextUtils.isEmpty(siteKey)) {
             siteKey = currentPlaySourceKey;
             if (!TextUtils.isEmpty(siteKey)) param.put("siteKey", siteKey);
+            LogWriter.i("echo-drama proxy: siteKey empty in params, fallback to currentPlaySourceKey=" + siteKey);
         }
         SourceBean sourceBean = TextUtils.isEmpty(siteKey) ? null : getSource(siteKey);
-        return sourceBean == null ? ApiConfig.get().getHomeSourceBean() : sourceBean;
+        if (sourceBean == null) {
+            LogWriter.e("echo-drama proxy: source NOT FOUND for siteKey=" + siteKey + " (neither sites nor dramas), fallback to home source");
+            return ApiConfig.get().getHomeSourceBean();
+        }
+        return sourceBean;
     }
 
     public void setCurrentPlaySourceKey(String sourceKey) {
@@ -1683,6 +1754,9 @@ public class ApiConfig {
 
     public SourceBean getSource(String key) {
         if (!sourceBeanList.containsKey(key)) {
+            if (dramaBeanList.containsKey(key)) {
+                return dramaBeanList.get(key);
+            }
             if ("push_agent".equals(key)) {
                 SourceBean sourceBean = new SourceBean();
                 sourceBean.setKey("push_agent");
@@ -1693,6 +1767,23 @@ public class ApiConfig {
             return null;
         }
         return sourceBeanList.get(key);
+    }
+
+    public LinkedHashMap<String, SourceBean> getDramaBeanList() {
+        return dramaBeanList;
+    }
+
+    public SourceBean getDrama(String key) {
+        return TextUtils.isEmpty(key) ? null : dramaBeanList.get(key);
+    }
+
+    public SourceBean getHomeDrama() {
+        return getDrama(Hawk.get(HawkConfig.DRAMA_HOME, ""));
+    }
+
+    public void setHomeDrama(SourceBean sourceBean) {
+        if (sourceBean == null) return;
+        Hawk.put(HawkConfig.DRAMA_HOME, sourceBean.getKey());
     }
 
     public void setSourceBean(SourceBean sourceBean) {

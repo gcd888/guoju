@@ -5,6 +5,7 @@ import android.text.TextUtils;
 import android.util.Base64;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.SystemClock;
 
 import androidx.annotation.NonNull;
 import androidx.lifecycle.MutableLiveData;
@@ -27,6 +28,7 @@ import com.github.tvbox.osc.util.DefaultConfig;
 import com.github.tvbox.osc.util.FileUtils;
 import com.github.tvbox.osc.util.HawkConfig;
 import com.github.tvbox.osc.util.LOG;
+import com.github.tvbox.osc.util.LogWriter;
 import com.github.tvbox.osc.util.MD5;
 import com.github.tvbox.osc.util.thunder.Thunder;
 import com.google.gson.Gson;
@@ -237,7 +239,9 @@ public class SourceViewModel extends ViewModel {
                         public String call() throws Exception {
                             Spider sp = ApiConfig.get().getCSP(sourceBean);
                             String json = sp.homeContent(true);
-//                            LOG.i("echo--getSort :" + json);
+                            LogWriter.i("echo-drama sort: homeContent key=" + sourceBean.getKey()
+                                    + " respLen=" + (json == null ? -1 : json.length()));
+                            LogWriter.i("echo-drama sort: homeContent raw " + (json == null ? "(null)" : json.length() > 4000 ? json.substring(0, 4000) + "...(truncated)" : json));
                             return json;
                         }
                     });
@@ -438,12 +442,24 @@ public class SourceViewModel extends ViewModel {
     }
     // categoryContent
     public void getList(MovieSort.SortData sortData, int page) {
+        getList(sortData, page, null);
+    }
+
+    /** sourceKey 非空时按指定站源加载（短剧页等独立页面使用），为空时跟随当前首页源。 */
+    public void getList(MovieSort.SortData sortData, int page, String sourceKey) {
         if (sortData == null) {
             LOG.i("echo-getList-sortData-null");
             listResult.postValue(null);
             return;
         }
-        SourceBean homeSourceBean = ApiConfig.get().getHomeSourceBean();
+        SourceBean targetSource = TextUtils.isEmpty(sourceKey) ? null : ApiConfig.get().getSource(sourceKey);
+        if (!TextUtils.isEmpty(sourceKey) && targetSource == null) {
+            LogWriter.e("echo-drama list: source NOT FOUND for sourceKey=" + sourceKey + " (check dramas parse in ApiConfig logs)");
+        }
+        SourceBean homeSourceBean = targetSource != null ? targetSource : ApiConfig.get().getHomeSourceBean();
+        LogWriter.i("echo-drama list: getList tid=" + sortData.id + " page=" + page
+                + " sourceKey=" + (sourceKey == null ? "(home)" : sourceKey)
+                + " resolved=" + homeSourceBean.getKey() + " type=" + homeSourceBean.getType());
         int type = homeSourceBean.getType();
         if (type == 3) {
             spThreadPool.execute(new Runnable() {
@@ -454,7 +470,12 @@ public class SourceViewModel extends ViewModel {
                         @Override
                         public String call() throws Exception {
                             Spider sp = ApiConfig.get().getCSP(homeSourceBean);
-                            return sp.categoryContent(sortData.id, page + "", true, sortData.filterSelect);
+                            String json = sp.categoryContent(sortData.id, page + "", true, sortData.filterSelect);
+                            LogWriter.i("echo-drama list: categoryContent key=" + homeSourceBean.getKey()
+                                    + " tid=" + sortData.id + " page=" + page
+                                    + " respLen=" + (json == null ? -1 : json.length()));
+                            LogWriter.i("echo-drama list: categoryContent raw " + (json == null ? "(null)" : json.length() > 4000 ? json.substring(0, 4000) + "...(truncated)" : json));
+                            return json;
                         }
                     });
                     String json = null;
@@ -785,6 +806,9 @@ public class SourceViewModel extends ViewModel {
         String id = urlid;
     
         SourceBean sourceBean = ApiConfig.get().getSource(sourceKey);
+        LogWriter.i("echo-detail page: getDetail sourceKey=" + sourceKey
+                + " id=" + urlid + " sourceFound=" + (sourceBean != null)
+                + (sourceBean == null ? "" : " type=" + sourceBean.getType()));
         if (isPushFallback(sourceKey, sourceBean)) {
             detailResult.postValue(createPushDetail(urlid, sourceKey));
             return;
@@ -806,6 +830,7 @@ public class SourceViewModel extends ViewModel {
                                 return sp.detailContent(ids);
                             } catch (Exception e) {
                                 LOG.i("echo--getDetail--error: " + e.getMessage());
+                                LogWriter.e("echo-detail page: detailContent THREW key=" + sourceBean.getKey() + " id=" + id + " : " + e.getMessage());
                                 return "";
                             }
                         }
@@ -815,12 +840,21 @@ public class SourceViewModel extends ViewModel {
                     try {
                         json = future.get(fallback ? 6 : 30, TimeUnit.SECONDS);
 //                        LOG.i("echo--getDetail--result:" + json);
+                        LogWriter.i("echo-detail page: detailContent raw key=" + sourceBean.getKey()
+                                + " len=" + (json == null ? -1 : json.length())
+                                + (json == null || json.length() > 1200 ? "" : " " + json));
                     } catch (TimeoutException e) {
                         LOG.i("echo--getDetail--timeout");
+                        LogWriter.e("echo-detail page: detailContent TIMEOUT key=" + sourceBean.getKey() + " id=" + id
+                                + " (jar 请求超 " + (fallback ? 6 : 30) + "s，弱网或站点慢)");
                         future.cancel(true);
                     } catch (Exception e) {
                         LOG.i("echo--getDetail--error: " + e.getMessage());
+                        LogWriter.e("echo-detail page: getDetail FAILED key=" + sourceBean.getKey() + " : " + e.getMessage());
                     } finally {
+                        if (json == null || json.isEmpty()) {
+                            LogWriter.e("echo-detail page: detailContent EMPTY -> 壳将显示暂无内容 key=" + sourceBean.getKey() + " id=" + id);
+                        }
                         json(detailResult, json, sourceBean.getKey());
                         executor.shutdown();
                     }
@@ -1141,9 +1175,17 @@ public class SourceViewModel extends ViewModel {
                             if (TextUtils.isEmpty(requestUrl)) return "";
                             try {
                                 LOG.i("echo--getPlay--id: " + requestUrl);
-                                return sp.playerContent(playFlag, requestUrl, ApiConfig.get().getVipParseFlags());
+                                long t0 = SystemClock.elapsedRealtime();
+                                String r = sp.playerContent(playFlag, requestUrl, ApiConfig.get().getVipParseFlags());
+                                LogWriter.i("echo-play page: playerContent returned key=" + sourceBean.getKey()
+                                        + " cost=" + (SystemClock.elapsedRealtime() - t0) + "ms"
+                                        + " len=" + (r == null ? -1 : r.length())
+                                        + (r == null || r.length() > 600 ? "" : " " + r));
+                                return r;
                             } catch (Exception e) {
                                 LOG.i("echo--getPlay--error: " + e.getMessage());
+                                LogWriter.e("echo-play page: playerContent THREW key=" + sourceBean.getKey()
+                                        + " url=" + requestUrl + " : " + e.getMessage());
                                 return "";
                             }
                         }
@@ -1152,6 +1194,9 @@ public class SourceViewModel extends ViewModel {
                     try {
                         String json = future.get(sourceBean.getPlayTimeoutSeconds(), TimeUnit.SECONDS);
                         LOG.i("echo--getPlay--result:" + json);
+                        LogWriter.i("echo-play page: getPlay OK key=" + sourceBean.getKey()
+                                + " timeout=" + sourceBean.getPlayTimeoutSeconds() + "s"
+                                + " rawLen=" + (json == null ? -1 : json.length()));
                         // 处理返回的 JSON
                         if (!TextUtils.isEmpty(json)) {
                             JSONObject result = normalizePlayerResult(new JSONObject(json));
@@ -1167,16 +1212,21 @@ public class SourceViewModel extends ViewModel {
                                 postPlayResult(requestSeq, result);
                             }
                         } else {
+                            LogWriter.e("echo-play page: playerContent EMPTY -> null (将触发换集重试) key=" + sourceBean.getKey());
                             postPlayResult(requestSeq, null);
                         }
                     } catch (TimeoutException e) {
                         // 如果超时了，处理超时逻辑
                         LOG.i("echo--getPlay--timeout");
+                        LogWriter.e("echo-play page: getPlay TIMEOUT key=" + sourceBean.getKey()
+                                + " budget=" + sourceBean.getPlayTimeoutSeconds() + "s url=" + requestUrl
+                                + " (jar playerContent 超时，通常是取流链路慢或网络挂起)");
                         future.cancel(true);
                         postPlayResult(requestSeq, null);
                     } catch (Exception e) {
                         // 捕获其他异常
                         LOG.i("echo--getPlay--error: " + e.getMessage());
+                        LogWriter.e("echo-play page: getPlay FAILED key=" + sourceBean.getKey() + " : " + e.getMessage());
                         postPlayResult(requestSeq, null);
                     } finally {
                         executor.shutdown();
@@ -1897,6 +1947,17 @@ public class SourceViewModel extends ViewModel {
             }.getType());
             AbsXml data = absJson.toAbsXml();
             absXml(data, sourceKey, searchToken);
+            if (result == detailResult) {
+                int nFlags = 0;
+                if (data.movie != null && data.movie.videoList != null && !data.movie.videoList.isEmpty()
+                        && data.movie.videoList.get(0).urlBean != null
+                        && data.movie.videoList.get(0).urlBean.infoList != null) {
+                    nFlags = data.movie.videoList.get(0).urlBean.infoList.size();
+                }
+                LogWriter.i("echo-detail page: detail parsed key=" + sourceKey
+                        + " videos=" + (data.movie == null || data.movie.videoList == null ? 0 : data.movie.videoList.size())
+                        + " playFlags=" + nFlags);
+            }
             if (searchResult == result) {
                 EventBus.getDefault().post(new RefreshEvent(RefreshEvent.TYPE_SEARCH_RESULT, data));
             } else if (quickSearchResult == result) {
@@ -1915,6 +1976,8 @@ public class SourceViewModel extends ViewModel {
                 postEmptySearchResult(result, sourceKey, searchToken);
             } else if (result != null) {
                 if (result == detailResult) {
+                    LogWriter.e("echo-detail page: detail JSON PARSE FAIL key=" + sourceKey
+                            + " rawLen=" + (json == null ? -1 : json.length()) + " : " + e.getMessage());
                     AbsXml data = new AbsXml();
                     data.sourceKey = sourceKey;
                     result.postValue(data);

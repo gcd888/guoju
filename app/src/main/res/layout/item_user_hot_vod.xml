@@ -12,7 +12,7 @@
         android:id="@+id/mItemFrame"
         android:layout_width="@dimen/atv_home_poster_w"
         android:layout_height="@dimen/atv_home_poster_h"
-        android:background="@color/atv_card">
+        android:background="@drawable/shape_poster_card_bg">
 
         <ImageView
             android:id="@+id/ivThumb"

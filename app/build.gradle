@@ -6,8 +6,10 @@ android {
     defaultConfig {
         applicationId 'com.github.gcd888.guoju'
         targetSdkVersion 28
-        versionCode 61
-        versionName '0.0.1.61'
+        versionCode 85
+        versionName '0.0.1.85'
+        // 打包时间戳（配置阶段生成，随每次构建刷新），用于日志与设置页核对安装包版本
+        buildConfigField "String", "BUILD_TIME", '"' + new Date().format("yyyy-MM-dd HH:mm:ss") + '"'
         multiDexEnabled true
         //设置room的Schema的位置
         javaCompileOptions {
@@ -201,5 +203,17 @@ dependencies {
 //    implementation 'com.google.android.gms:play-services-cronet:18.0.1'
     implementation ('org.chromium.net:cronet-embedded:101.4951.41')
     implementation 'org.brotli:dec:0.1.2'
+}
+
+// 打包完成后自动把 java64 APK 复制到 dist 目录，避免忘记手动拷贝
+task copyJava64ApkToDist(type: Copy) {
+    from 'build/outputs/apk/java64/debug'
+    include '*debug-java64.apk'
+    into rootProject.file('dist')
+}
+tasks.whenTaskAdded { task ->
+    if (task.name == 'assembleJava64Debug') {
+        task.finalizedBy 'copyJava64ApkToDist'
+    }
 }
 

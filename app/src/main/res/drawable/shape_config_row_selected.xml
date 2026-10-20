@@ -1,17 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 配置弹窗三列勾选态：橙色描边常驻高亮（聚焦时叠加深色底强化焦点可见性）；
-     圆角与默认行背景 button_dialog_vod 对齐，颜色复用项目已有 color_FF5F00 -->
 <selector xmlns:android="http://schemas.android.com/apk/res/android">
     <item android:state_focused="true">
         <shape>
-            <corners android:radius="@dimen/vs_30" />
+            <corners android:radius="5mm" />
+            <solid android:color="#E60A84FF" />
             <stroke android:width="@dimen/vs_2" android:color="@color/color_FF5F00" />
-            <solid android:color="@color/color_66000000" />
         </shape>
     </item>
-    <item>
+    <item android:state_focused="false">
         <shape>
-            <corners android:radius="@dimen/vs_30" />
+            <corners android:radius="5mm" />
+            <solid android:color="@android:color/transparent" />
             <stroke android:width="@dimen/vs_2" android:color="@color/color_FF5F00" />
         </shape>
     </item>
