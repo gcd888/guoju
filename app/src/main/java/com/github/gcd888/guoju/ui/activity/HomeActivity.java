@@ -1361,7 +1361,14 @@ public class HomeActivity extends BaseActivity {
                 if (!act.gridExpanded
                         && act.sortFocused >= 0 && act.sortFocused < act.fragments.size()
                         && act.fragments.get(act.sortFocused) instanceof HomeGridPage) {
-                    VodHomeFragment.showSortPreview(((HomeGridPage) act.fragments.get(act.sortFocused)).getGridData());
+                    // 按主页类型分流：短剧页异步数据到达必须通知短剧货架（此前写死点播，
+                    // 短剧页首次切分类 tab 后货架不刷新，需反复切换才变）
+                    List<Movie.Video> previewData = ((HomeGridPage) act.fragments.get(act.sortFocused)).getGridData();
+                    if (act.homeType == HOME_TYPE_DRAMA) {
+                        DramaHomeFragment.showDramaShelfPreview(previewData);
+                    } else {
+                        VodHomeFragment.showSortPreview(previewData);
+                    }
                 }
             }
         });
