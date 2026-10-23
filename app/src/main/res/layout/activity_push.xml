@@ -4,7 +4,7 @@
     android:id="@+id/rootLayout"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@color/atv_bg">
+    android:background="@drawable/bg_page_wallpaper">
 
     <LinearLayout
         android:layout_width="match_parent"

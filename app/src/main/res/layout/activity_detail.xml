@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
@@ -167,16 +167,6 @@
                     android:focusable="false"
                     android:ellipsize="end"
                     android:singleLine="true"
-                    android:textColor="@color/color_CCFFFFFF"
-                    android:textSize="@dimen/ts_20" />
-
-                <TextView
-                    android:id="@+id/tvPlayUrl"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:ellipsize="end"
-                    android:singleLine="true"
-                    android:focusable="false"
                     android:textColor="@color/color_CCFFFFFF"
                     android:textSize="@dimen/ts_20" />
 

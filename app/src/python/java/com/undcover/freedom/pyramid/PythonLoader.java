@@ -12,7 +12,7 @@ import com.github.catvod.crawler.Spider;
 import com.github.catvod.crawler.SpiderNull;
 
 import com.github.catvod.net.OkHttp;
-import com.github.tvbox.osc.util.OkGoHelper;
+import com.github.gcd888.guoju.util.OkGoHelper;
 
 
 import org.json.JSONArray;

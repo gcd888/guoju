@@ -4,7 +4,7 @@
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@drawable/bg_search_wallpaper"
+    android:background="@drawable/bg_page_wallpaper"
     android:clipChildren="false"
     android:clipToPadding="false"
     android:orientation="horizontal">
@@ -85,7 +85,7 @@
             </LinearLayout>
         </LinearLayout>
 
-        <com.github.tvbox.osc.ui.tv.widget.SearchKeyboard
+        <com.github.gcd888.guoju.ui.tv.widget.SearchKeyboard
             android:id="@+id/keyBoardRoot"
             android:layout_width="match_parent"
             android:layout_height="match_parent" />

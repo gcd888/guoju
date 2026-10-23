@@ -4,9 +4,9 @@ import android.content.Context;
 import android.text.TextUtils;
 import android.util.Base64;
 import com.github.catvod.crawler.Spider;
-import com.github.tvbox.osc.util.FileUtils;
-import com.github.tvbox.osc.util.LOG;
-import com.github.tvbox.osc.util.MD5;
+import com.github.gcd888.guoju.util.FileUtils;
+import com.github.gcd888.guoju.util.LOG;
+import com.github.gcd888.guoju.util.MD5;
 
 import com.whl.quickjs.wrapper.ContextSetter;
 import com.whl.quickjs.wrapper.Function;

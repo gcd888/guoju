@@ -1,0 +1,141 @@
+﻿commit 7cdc3e6058902c873463c2ae036259d751cd8b29
+Author: gcd888 <873221014@qq.com>
+Date:   Sun Oct 18 16:04:20 2026 +0800
+
+    fix: 配置弹窗删除激活配置判断+缓存遍历防环+刷新恢复会话删除
+
+ .../java/com/github/tvbox/osc/api/ConfigRepo.java  | 25 ++++++++++++++++++----
+ .../github/tvbox/osc/ui/dialog/ConfigDialog.java   |  6 ++++--
+ 2 files changed, 25 insertions(+), 6 deletions(-)
+commit 7cdc3e6058902c873463c2ae036259d751cd8b29
+Author: gcd888 <873221014@qq.com>
+Date:   Sun Oct 18 16:04:20 2026 +0800
+
+    fix: 配置弹窗删除激活配置判断+缓存遍历防环+刷新恢复会话删除
+
+diff --git a/app/src/main/java/com/github/tvbox/osc/api/ConfigRepo.java b/app/src/main/java/com/github/tvbox/osc/api/ConfigRepo.java
+index a86634a..ca7c53d 100644
+--- a/app/src/main/java/com/github/tvbox/osc/api/ConfigRepo.java
++++ b/app/src/main/java/com/github/tvbox/osc/api/ConfigRepo.java
+@@ -9,22 +9,24 @@ import com.github.tvbox.osc.util.HawkConfig;
+ import com.lzy.okgo.OkGo;
+ import com.lzy.okgo.callback.AbsCallback;
+ import com.lzy.okgo.model.Response;
+ import com.orhanobut.hawk.Hawk;
+ 
+ import org.json.JSONArray;
+ import org.json.JSONObject;
+ 
+ import java.util.ArrayList;
+ import java.util.HashMap;
++import java.util.HashSet;
+ import java.util.List;
+ import java.util.Map;
++import java.util.Set;
+ 
+ /**
+  * 配置弹窗数据层：配置 > 仓库 > 线路 三级钻取。
+  * 判型递归：storeHouse→仓库层 / urls→线路层 / sites→终端配置（可激活）。
+  * 缺失层级由 ConfigDialog 补虚拟节点；无持久拉黑（仓库/线路删除仅会话内）。
+  * clan:// 重写逻辑自 WarehouseRepo 吸收。
+  */
+ public final class ConfigRepo {
+ 
+     public interface NodeCallback {
+@@ -137,46 +139,61 @@ public final class ConfigRepo {
+     // ---------------- 拉取与判型 ----------------
+ 
+     public static void invalidate(String url) {
+         CACHE.remove(url);
+     }
+ 
+     public static void invalidateAll() {
+         CACHE.clear();
+     }
+ 
+-    /** 失效整棵会话缓存子树（长按刷新配置用；含 root 自身，遍历已缓存下级）。 */
++    /**
++     * 失效整棵会话缓存子树（长按刷新配置用；含 root 自身，遍历已缓存下级）。
++     * 设计语义「仓库/线路删除=会话内移除，刷新或重进弹窗后恢复」：该树内被会话删除的
++     * url 一并解除拉黑，其余 url 的会话删除保留（长按刷新=恢复该树）。
++     */
+     public static void invalidateTree(String rootUrl) {
+         List<String> pending = new ArrayList<>();
++        Set<String> visited = new HashSet<>();
++        List<String> treeUrls = new ArrayList<>();
+         pending.add(rootUrl);
++        visited.add(rootUrl);
+         while (!pending.isEmpty()) {
+             String cur = pending.remove(0);
++            treeUrls.add(cur);
+             FetchResult cached = CACHE.remove(cur);
+             if (cached == null) continue;
+             for (ConfigNodeBean n : cached.nodes) {
+-                pending.add(n.url);
++                if (visited.add(n.url)) {
++                    pending.add(n.url);
++                }
+             }
+         }
++        SESSION_REMOVED.removeAll(treeUrls);
+     }
+ 
+-    /** 检查 rootUrl 会话缓存子树（已展开部分）是否包含 target url。 */
++    /** 检查 rootUrl 会话缓存子树（已展开部分）是否包含 target url（visited 防缓存 url 成环）。 */
+     public static boolean cacheTreeContains(String rootUrl, String target) {
+         if (TextUtils.isEmpty(target)) return false;
+         List<String> pending = new ArrayList<>();
++        Set<String> visited = new HashSet<>();
+         pending.add(rootUrl);
++        visited.add(rootUrl);
+         while (!pending.isEmpty()) {
+             String cur = pending.remove(0);
+             FetchResult cached = CACHE.get(cur);
+             if (cached == null) continue;
+             for (ConfigNodeBean n : cached.nodes) {
+                 if (target.equals(n.url)) return true;
+-                pending.add(n.url);
++                if (visited.add(n.url)) {
++                    pending.add(n.url);
++                }
+             }
+         }
+         return false;
+     }
+ 
+     /** 拉取并判型（带会话缓存；SESSION_REMOVED 过滤下级节点）。 */
+     public static void fetchNode(final String url, final NodeCallback callback) {
+         if (TextUtils.isEmpty(url)) {
+             callback.onError("链接为空");
+             return;
+diff --git a/app/src/main/java/com/github/tvbox/osc/ui/dialog/ConfigDialog.java b/app/src/main/java/com/github/tvbox/osc/ui/dialog/ConfigDialog.java
+index 9f93341..118f098 100644
+--- a/app/src/main/java/com/github/tvbox/osc/ui/dialog/ConfigDialog.java
++++ b/app/src/main/java/com/github/tvbox/osc/ui/dialog/ConfigDialog.java
+@@ -244,22 +244,24 @@ public class ConfigDialog extends BaseDialog {
+ 
+     private void deleteConfig(final ConfigNodeBean node) {
+         final String activeUrl = ConfigRepo.getActiveUrl();
+         String tip = activeUrl.isEmpty()
+                 ? "删除「" + node.name + "」？"
+                 : "删除「" + node.name + "」？若当前源来自该配置将恢复默认。";
+         confirmDelete(tip, new Runnable() {
+             @Override
+             public void run() {
+                 ConfigRepo.removeConfigItem(node.url);
+-                // 该配置会话缓存树若含当前生效线路 → 回默认源并重载
+-                if (!activeUrl.isEmpty() && ConfigRepo.cacheTreeContains(node.url, activeUrl)) {
++                // 该配置自身即生效源（TERMINAL 经虚拟线路激活时 CONFIG_ACTIVE==config.url，
++                // cacheTreeContains 只查子孙查不到根）或其缓存树含生效线路 → 回默认源并重载
++                if (!activeUrl.isEmpty()
++                        && (node.url.equals(activeUrl) || ConfigRepo.cacheTreeContains(node.url, activeUrl))) {
+                     ConfigRepo.setActiveUrl("");
+                     Hawk.put(HawkConfig.API_URL, "");
+                     SourceViewModel.clearRuntimeCache();
+                     dismiss();
+                     Intent intent = new Intent(getContext(), HomeActivity.class);
+                     intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
+                     getContext().startActivity(intent);
+                     return;
+                 }
+                 rebuildRootLevel();

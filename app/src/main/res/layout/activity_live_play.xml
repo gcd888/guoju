@@ -465,7 +465,7 @@
 					android:scaleType="centerInside" />
 
 			</FrameLayout>
-		<com.github.tvbox.osc.ui.tv.widget.MarqueeTextView
+		<com.github.gcd888.guoju.ui.tv.widget.MarqueeTextView
 			android:id="@+id/tv_channel_bar_name"
 			android:layout_width="@dimen/vs_200"
 			android:layout_height="wrap_content"
@@ -502,7 +502,7 @@
 			android:text=""
 			android:textColor="@color/color_FFFFFF"
 			android:textSize="@dimen/ts_26" />
-		<com.github.tvbox.osc.ui.tv.widget.MarqueeTextView
+		<com.github.gcd888.guoju.ui.tv.widget.MarqueeTextView
 			android:textSize="@dimen/ts_26"
 			android:textColor="@color/color_FFFFFF"
 			android:ellipsize="marquee"
@@ -516,7 +516,7 @@
 			android:layout_toRightOf="@+id/tv_current_program"
 			android:layout_alignTop="@+id/tv_current_program" />
 
-		<com.github.tvbox.osc.ui.tv.widget.MarqueeTextView
+		<com.github.gcd888.guoju.ui.tv.widget.MarqueeTextView
 			android:id="@+id/tv_current_program_name"
 			android:layout_width="@dimen/vs_440"
 			android:layout_height="wrap_content"
@@ -554,7 +554,7 @@
 			android:layout_alignLeft="@+id/tv_current_program"
 			android:layout_alignBottom="@+id/view_line"
 			android:layout_alignParentBottom="true" />
-		<com.github.tvbox.osc.ui.tv.widget.MarqueeTextView
+		<com.github.gcd888.guoju.ui.tv.widget.MarqueeTextView
 			android:textSize="@dimen/ts_26"
 			android:textColor="@color/color_FFFFFF"
 			android:id="@+id/tv_next_program_time"
@@ -568,7 +568,7 @@
 			android:layout_toRightOf="@+id/tv_next_program"
 			android:layout_alignTop="@+id/tv_next_program" />
 
-		<com.github.tvbox.osc.ui.tv.widget.MarqueeTextView
+		<com.github.gcd888.guoju.ui.tv.widget.MarqueeTextView
 			android:id="@+id/tv_next_program_name"
 			android:layout_width="@dimen/vs_440"
 			android:layout_height="wrap_content"
@@ -750,7 +750,7 @@
 			android:layout_centerVertical="true"
 			android:layout_marginRight="@dimen/vs_10"
 			android:src="@drawable/app_icon" />
-		<com.github.tvbox.osc.ui.tv.widget.MarqueeTextView
+		<com.github.gcd888.guoju.ui.tv.widget.MarqueeTextView
 			android:id="@+id/tv_right_top_channel_name"
 			android:layout_width="@dimen/vs_150"
 			android:layout_height="wrap_content"

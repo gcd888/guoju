@@ -2,8 +2,8 @@ package com.github.catvod.crawler.js;
 
 import android.util.Base64;
 
-import com.github.tvbox.osc.util.LOG;
-import com.github.tvbox.osc.util.OkGoHelper;
+import com.github.gcd888.guoju.util.LOG;
+import com.github.gcd888.guoju.util.OkGoHelper;
 import com.google.common.net.HttpHeaders;
 import com.lzy.okgo.OkGo;
 import com.whl.quickjs.wrapper.JSArray;

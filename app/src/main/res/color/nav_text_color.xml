@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 顶部文字导航颜色：焦点白底时黑字，常态灰白 -->
+<!-- 顶部导航 tab 文字颜色：选中（当前主页类型）白字、焦点白字、常态灰白 -->
 <selector xmlns:android="http://schemas.android.com/apk/res/android">
-    <item android:color="#FF000000" android:state_focused="true" />
+    <item android:color="#FFFFFFFF" android:state_selected="true" />
+    <item android:color="#FFFFFFFF" android:state_focused="true" />
     <item android:color="@color/atv_text_secondary" />
 </selector>

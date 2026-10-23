@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- home 图标描边态：非主页 tab 时使用，白色描边、内部透明（选中态用 icon_home 白色填充） -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="@android:color/transparent"
+        android:pathData="M12,2.25 L1.46,11.46 L3.34,11.46 L3.34,21.45 L9.78,21.45 L9.78,14.79 L14.22,14.79 L14.22,21.45 L20.66,21.45 L20.66,11.46 L22.54,11.46 Z"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeLineJoin="round"
+        android:strokeWidth="1.5" />
+</vector>

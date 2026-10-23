@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="com.github.tvbox.osc">
+    package="com.github.gcd888.guoju">
 
     <uses-feature
         android:name="android.software.leanback"
@@ -35,6 +35,7 @@
 
         <activity
             android:name=".ui.activity.HomeActivity"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|uiMode|density"
             android:exported="true"
             android:screenOrientation="sensorLandscape">
             <intent-filter>
@@ -47,9 +48,6 @@
 
         <activity
             android:name=".ui.activity.LivePlayActivity"
-            android:screenOrientation="sensorLandscape" />
-        <activity
-            android:name=".ui.activity.DramaActivity"
             android:screenOrientation="sensorLandscape" />
         <activity
             android:name=".ui.activity.DetailActivity"

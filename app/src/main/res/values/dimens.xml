@@ -11,6 +11,8 @@
     <dimen name="ts_26">26mm</dimen>
     <dimen name="ts_28">28mm</dimen>
     <dimen name="ts_30">30mm</dimen>
+    <!-- 顶部导航栏专用字号（随屏幕尺寸缩放的 mm 单位，比 ts_26 大一档） -->
+    <dimen name="ts_nav">26mm</dimen>
     <dimen name="ts_34">34mm</dimen>
     <dimen name="ts_40">40mm</dimen>
     <dimen name="ts_50">50mm</dimen>

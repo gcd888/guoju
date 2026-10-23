@@ -6,8 +6,8 @@ android {
     defaultConfig {
         applicationId 'com.github.gcd888.guoju'
         targetSdkVersion 28
-        versionCode 86
-        versionName '0.0.1.86'
+        versionCode 110
+        versionName '0.0.1.110'
         // 打包时间戳（配置阶段生成，随每次构建刷新），用于日志与设置页核对安装包版本
         buildConfigField "String", "BUILD_TIME", '"' + new Date().format("yyyy-MM-dd HH:mm:ss") + '"'
         multiDexEnabled true
@@ -203,17 +203,40 @@ dependencies {
 //    implementation 'com.google.android.gms:play-services-cronet:18.0.1'
     implementation ('org.chromium.net:cronet-embedded:101.4951.41')
     implementation 'org.brotli:dec:0.1.2'
+
+    testImplementation 'junit:junit:4.13.2'
+    // 单测用真实 org.json 实现（Android SDK 内的 org.json 在 JVM 单测中为 Stub!）
+    testImplementation 'org.json:json:20231013'
 }
 
-// 打包完成后自动把 java64 APK 复制到 dist 目录，避免忘记手动拷贝
-task copyJava64ApkToDist(type: Copy) {
-    from 'build/outputs/apk/java64/debug'
-    include '*debug-java64.apk'
+// 打包完成后自动把全部 6 种格式（java/java32/java64/python/python32/python64）的 debug APK
+// 复制到 dist 目录；复制前先清空 dist 中的历史 APK，只保留本次产物
+task copyApkToDist(type: Copy) {
+    from 'build/outputs/apk/java/debug',
+         'build/outputs/apk/java32/debug',
+         'build/outputs/apk/java64/debug',
+         'build/outputs/apk/python/debug',
+         'build/outputs/apk/python32/debug',
+         'build/outputs/apk/python64/debug'
+    include '*debug-*.apk'
     into rootProject.file('dist')
+    doFirst {
+        // 删除历史包：只清 dist 下的 apk，保留目录内其他文件
+        delete fileTree(dir: rootProject.file('dist'), include: ['*.apk'])
+    }
 }
 tasks.whenTaskAdded { task ->
-    if (task.name == 'assembleJava64Debug') {
-        task.finalizedBy 'copyJava64ApkToDist'
+    if (task.name in ['assembleJavaDebug', 'assembleJava32Debug', 'assembleJava64Debug',
+                      'assemblePythonDebug', 'assemblePython32Debug', 'assemblePython64Debug']) {
+        task.finalizedBy 'copyApkToDist'
     }
+}
+
+// 一键打包全部格式：./gradlew assembleAllDebug（copyApkToDist 仅在全部完成后执行一次）
+task assembleAllDebug {
+    group = 'build'
+    description = '打包全部 6 种格式 debug APK 并复制到 dist（自动清理历史包）'
+    dependsOn 'assembleJavaDebug', 'assembleJava32Debug', 'assembleJava64Debug',
+              'assemblePythonDebug', 'assemblePython32Debug', 'assemblePython64Debug'
 }
 

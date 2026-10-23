@@ -21,7 +21,6 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_gravity="top"
-        android:layout_marginTop="@dimen/atv_hero_info_top"
         android:orientation="vertical"
         android:paddingLeft="@dimen/atv_safe_side"
         android:paddingRight="@dimen/atv_safe_side">
@@ -54,7 +53,8 @@
             android:textColor="@color/atv_text_primary"
             android:textSize="@dimen/ts_20" />
 
-        <!-- 宽度必须 wrap_content：代码里 setWidth(屏幕物理宽/2) 只对 wrap_content 生效 -->
+        <!-- 行数由代码动态计算（HeroInfoLayout：按底部 tab 行实际位置留 20mm）；
+             宽度必须 wrap_content：代码里 setWidth(屏幕物理宽/2) 只对 wrap_content 生效 -->
         <TextView
             android:id="@+id/tvHeroDesc"
             android:layout_width="wrap_content"
@@ -62,7 +62,7 @@
             android:layout_marginTop="@dimen/vs_4"
             android:alpha="0.75"
             android:ellipsize="end"
-            android:maxLines="2"
+            android:maxLines="1"
             android:shadowColor="@color/atv_scrim_bottom"
             android:shadowDy="1"
             android:shadowRadius="4"

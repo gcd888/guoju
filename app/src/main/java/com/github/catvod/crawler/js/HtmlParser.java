@@ -1,7 +1,7 @@
 package com.github.catvod.crawler.js;
 
 import android.text.TextUtils;
-import com.github.tvbox.osc.util.StringUtils;
+import com.github.gcd888.guoju.util.StringUtils;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;

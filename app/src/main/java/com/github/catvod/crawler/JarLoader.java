@@ -6,12 +6,12 @@ import android.text.TextUtils;
 import android.util.Log;
 
 import com.github.catvod.net.OkHttp;
-import com.github.tvbox.osc.base.App;
-import com.github.tvbox.osc.server.ControlManager;
-import com.github.tvbox.osc.server.RemoteServer;
-import com.github.tvbox.osc.util.FileUtils;
-import com.github.tvbox.osc.util.LogWriter;
-import com.github.tvbox.osc.util.MD5;
+import com.github.gcd888.guoju.base.App;
+import com.github.gcd888.guoju.server.ControlManager;
+import com.github.gcd888.guoju.server.RemoteServer;
+import com.github.gcd888.guoju.util.FileUtils;
+import com.github.gcd888.guoju.util.LogWriter;
+import com.github.gcd888.guoju.util.MD5;
 import com.lzy.okgo.OkGo;
 
 import org.json.JSONObject;
@@ -82,24 +82,30 @@ public class JarLoader {
 
     private boolean load(String key, File file) {
         if (Thread.interrupted()) return false;
-        if (!exists(file)) return false;
+        if (!exists(file)) {
+            LogWriter.e("echo-drama jar: load SKIP key=" + key + " file missing/empty: " + (file == null ? "null" : file.getAbsolutePath()));
+            return false;
+        }
         if (loaders.containsKey(key)) return true;
         try {
             file.setReadOnly();
             String cachePath = jarDir().getAbsolutePath();
             DexClassLoader loader = new DexClassLoader(file.getAbsolutePath(), cachePath, cachePath, App.getInstance().getClassLoader());
             if (!invokeInit(loader, file.getAbsolutePath())) {
-                Log.i(TAG, "load error key=" + key + ", protected jar loader not bound");
+                LogWriter.e("echo-drama jar: load FAIL key=" + key + ", protected jar loader not bound, file=" + file.getAbsolutePath());
                 return false;
             }
             invokeProxy(key, loader);
             invokeDanmaku(key, loader);
             injectProxyPort(loader);
             loaders.put(key, loader);
-            Log.i(TAG, "load success key=" + key + ", file=" + file.getAbsolutePath());
+            LogWriter.i("echo-drama jar: load OK key=" + key + ", file=" + file.getAbsolutePath()
+                    + " size=" + file.length() + " dexOpted=" + new File(cachePath, new File(file.getAbsolutePath()).getName() + ".dex").exists());
             return true;
         } catch (Throwable e) {
-            Log.i(TAG, "load error key=" + key + ", msg=" + e.getMessage());
+            LogWriter.e("echo-drama jar: load FAIL key=" + key + ", file=" + file.getAbsolutePath()
+                    + ", error=" + e.getClass().getSimpleName() + ": " + e.getMessage()
+                    + " (dex corrupted? check download logs above)");
             e.printStackTrace();
             return false;
         }
@@ -118,6 +124,7 @@ public class JarLoader {
                 method.invoke(null, App.getInstance());
             }
         } catch (Throwable e) {
+            LogWriter.i("echo-drama jar: Init.init failed (non-fatal): " + e.getClass().getSimpleName() + ": " + e.getMessage());
             e.printStackTrace();
         }
         return !protectedJar;
@@ -338,19 +345,35 @@ public class JarLoader {
     private File download(String url, File file) {
         InputStream is = null;
         FileOutputStream os = null;
+        long t0 = android.os.SystemClock.elapsedRealtime();
         try {
+            LogWriter.i("echo-drama jar: download begin url=" + url);
             Response response = OkGo.<File>get(url).execute();
-            if (response.body() == null) return file;
+            int code = response.code();
+            if (response.body() == null) {
+                LogWriter.e("echo-drama jar: download FAIL url=" + url + " http=" + code + " body=null (file untouched)");
+                return file;
+            }
             is = response.body().byteStream();
             os = new FileOutputStream(create(file));
             byte[] buffer = new byte[16384];
+            long total = 0;
             int length;
             while ((length = is.read(buffer)) != -1) {
                 if (Thread.interrupted()) return file;
                 os.write(buffer, 0, length);
+                total += length;
             }
             os.flush();
+            boolean fileOk = exists(file);
+            LogWriter.i("echo-drama jar: download done url=" + url + " http=" + code
+                    + " bytes=" + total + " costMs=" + (android.os.SystemClock.elapsedRealtime() - t0)
+                    + " fileExists=" + fileOk + " fileSize=" + (fileOk ? file.length() : -1)
+                    + " actualMd5=" + (fileOk ? MD5.getFileMd5(file) : "(none)"));
         } catch (Throwable e) {
+            LogWriter.e("echo-drama jar: download EXCEPTION url=" + url
+                    + " costMs=" + (android.os.SystemClock.elapsedRealtime() - t0)
+                    + " error=" + e.getClass().getSimpleName() + ": " + e.getMessage());
             e.printStackTrace();
         } finally {
             close(is);

@@ -1,0 +1,1955 @@
+﻿51d2d09 refactor: 删除旧多仓模块，版本 0.0.1.29
+9b5cd1e feat: 顶栏推送改配置并绑定 ConfigDialog
+7cdc3e6 fix: 配置弹窗删除激活配置判断+缓存遍历防环+刷新恢复会话删除
+11f103a feat: ConfigDialog 三级钻取状态机（虚拟层补全+删除+长按刷新+激活链路）
+1616fe9 feat: 配置弹窗布局与适配器
+04a6b18 feat: 配置弹窗数据层 ConfigRepo（判型递归+虚拟命名+会话缓存）
+ app/build.gradle                                   |   2 +-
+ .../java/com/github/tvbox/osc/api/ConfigRepo.java  | 325 +++++++++++++++++++
+ .../com/github/tvbox/osc/api/WarehouseRepo.java    | 188 -----------
+ .../java/com/github/tvbox/osc/bean/ConfigItem.java |  15 +
+ .../com/github/tvbox/osc/bean/ConfigNodeBean.java  |  38 +++
+ .../com/github/tvbox/osc/bean/WarehouseBean.java   |  33 --
+ .../github/tvbox/osc/ui/activity/HomeActivity.java |   4 +-
+ .../github/tvbox/osc/ui/adapter/ConfigAdapter.java |  39 +++
+ .../tvbox/osc/ui/adapter/PushSourceAdapter.java    |  41 ---
+ .../tvbox/osc/ui/adapter/WarehouseAdapter.java     |  46 ---
+ .../github/tvbox/osc/ui/dialog/ConfigDialog.java   | 343 +++++++++++++++++++++
+ .../tvbox/osc/ui/dialog/WarehouseDialog.java       | 244 ---------------
+ .../java/com/github/tvbox/osc/util/HawkConfig.java |   4 +-
+ app/src/main/res/layout/activity_home.xml          |   2 +-
+ app/src/main/res/layout/dialog_config.xml          | 120 +++++++
+ app/src/main/res/layout/dialog_warehouse.xml       | 172 -----------
+ app/src/main/res/layout/item_config_row.xml        |  44 +++
+ app/src/main/res/layout/item_push_source.xml       |  31 --
+ app/src/main/res/layout/item_warehouse.xml         |  57 ----
+ 19 files changed, 930 insertions(+), 818 deletions(-)
+diff --git a/app/build.gradle b/app/build.gradle
+index ed0469e..eb28182 100644
+--- a/app/build.gradle
++++ b/app/build.gradle
+@@ -1,20 +1,20 @@
+ apply plugin: 'com.android.application'
+ 
+ android {
+     compileSdkVersion 33
+ 
+     defaultConfig {
+         applicationId 'com.github.gcd888.guoju'
+         targetSdkVersion 28
+         versionCode 30
+-        versionName '0.0.1.28'
++        versionName '0.0.1.29'
+         multiDexEnabled true
+         //设置room的Schema的位置
+         javaCompileOptions {
+             annotationProcessorOptions {
+                 arguments = ["room.schemaLocation": "$projectDir/schemas".toString()]
+             }
+         }
+     }
+ 
+     packagingOptions {
+diff --git a/app/src/main/java/com/github/tvbox/osc/api/ConfigRepo.java b/app/src/main/java/com/github/tvbox/osc/api/ConfigRepo.java
+new file mode 100644
+index 0000000..e9e251b
+--- /dev/null
++++ b/app/src/main/java/com/github/tvbox/osc/api/ConfigRepo.java
+@@ -0,0 +1,325 @@
++package com.github.tvbox.osc.api;
++
++import android.text.TextUtils;
++
++import com.github.tvbox.osc.bean.ConfigItem;
++import com.github.tvbox.osc.bean.ConfigNodeBean;
++import com.github.tvbox.osc.server.ControlManager;
++import com.github.tvbox.osc.util.HawkConfig;
++import com.lzy.okgo.OkGo;
++import com.lzy.okgo.callback.AbsCallback;
++import com.lzy.okgo.model.Response;
++import com.orhanobut.hawk.Hawk;
++
++import org.json.JSONArray;
++import org.json.JSONObject;
++
++import java.util.ArrayList;
++import java.util.HashMap;
++import java.util.HashSet;
++import java.util.List;
++import java.util.Map;
++import java.util.Set;
++
++/**
++ * 配置弹窗数据层：配置 > 仓库 > 线路 三级钻取。
++ * 判型递归：storeHouse→仓库层 / urls→线路层 / sites→终端配置（可激活）。
++ * 缺失层级由 ConfigDialog 补虚拟节点；无持久拉黑（仓库/线路删除仅会话内）。
++ * clan:// 重写逻辑自旧多仓模块吸收。
++ */
++public final class ConfigRepo {
++
++    public interface NodeCallback {
++        void onSuccess(FetchResult result);
++
++        void onError(String msg);
++    }
++
++    /** 判型结果：type=本 url 的层级形态，nodes=下级列表（TERMINAL 时为空）。 */
++    public static class FetchResult {
++        public int type;
++        public List<ConfigNodeBean> nodes = new ArrayList<>();
++    }
++
++    /** 会话缓存：url → 判型结果（含下级节点）。 */
++    private static final Map<String, FetchResult> CACHE = new HashMap<>();
++    /** 会话内删除的仓库/线路 url（本会话不再出现；刷新/重进弹窗恢复）。 */
++    private static final List<String> SESSION_REMOVED = new ArrayList<>();
++    private static int warehouseSeq = 0;
++    private static int lineSeq = 0;
++
++    private ConfigRepo() {
++    }
++
++    // ---------------- 一级配置列表（持久） ----------------
++
++    public static List<ConfigItem> getConfigList() {
++        ArrayList<ConfigItem> list = Hawk.get(HawkConfig.CONFIG_LIST, new ArrayList<>());
++        return list == null ? new ArrayList<>() : list;
++    }
++
++    /** 新增配置；url 已存在时返回 false（提示已存在，不重复添加）。 */
++    public static boolean addConfigItem(String name, String url) {
++        List<ConfigItem> list = getConfigList();
++        for (ConfigItem item : list) {
++            if (item.url != null && item.url.equals(url)) {
++                return false;
++            }
++        }
++        list.add(new ConfigItem(name, url));
++        Hawk.put(HawkConfig.CONFIG_LIST, list);
++        return true;
++    }
++
++    public static ConfigItem removeConfigItem(String url) {
++        List<ConfigItem> list = getConfigList();
++        for (int i = 0; i < list.size(); i++) {
++            if (list.get(i).url != null && list.get(i).url.equals(url)) {
++                ConfigItem removed = list.remove(i);
++                Hawk.put(HawkConfig.CONFIG_LIST, list);
++                CACHE.remove(url);
++                return removed;
++            }
++        }
++        return null;
++    }
++
++    public static String getActiveUrl() {
++        return Hawk.get(HawkConfig.CONFIG_ACTIVE, "");
++    }
++
++    public static void setActiveUrl(String url) {
++        Hawk.put(HawkConfig.CONFIG_ACTIVE, url == null ? "" : url);
++    }
++
++    // ---------------- 命名 ----------------
++
++    /** 自定义配置N：N=现有「自定义配置」最大序号+1。 */
++    public static String genConfigName() {
++        int max = 0;
++        for (ConfigItem item : getConfigList()) {
++            max = Math.max(max, seqOf(item.name, "自定义配置"));
++        }
++        return "自定义配置" + (max + 1);
++    }
++
++    /** 虚拟层命名（自定义仓库N/自定义线路N），会话内各自独立递增。 */
++    public static String genVirtualName(String prefix) {
++        if ("自定义仓库".equals(prefix)) {
++            return prefix + (++warehouseSeq);
++        }
++        return prefix + (++lineSeq);
++    }
++
++    private static int seqOf(String name, String prefix) {
++        if (name == null || !name.startsWith(prefix)) {
++            return 0;
++        }
++        try {
++            return Integer.parseInt(name.substring(prefix.length()));
++        } catch (Throwable th) {
++            return 0;
++        }
++    }
++
++    // ---------------- 会话内删除（无持久拉黑） ----------------
++
++    public static void sessionRemove(String url) {
++        if (!SESSION_REMOVED.contains(url)) {
++            SESSION_REMOVED.add(url);
++        }
++    }
++
++    public static void resetSession() {
++        SESSION_REMOVED.clear();
++        warehouseSeq = 0;
++        lineSeq = 0;
++    }
++
++    // ---------------- 拉取与判型 ----------------
++
++    public static void invalidate(String url) {
++        CACHE.remove(url);
++    }
++
++    public static void invalidateAll() {
++        CACHE.clear();
++    }
++
++    /**
++     * 失效整棵会话缓存子树（长按刷新配置用；含 root 自身，遍历已缓存下级）。
++     * 设计语义「仓库/线路删除=会话内移除，刷新或重进弹窗后恢复」：该树内被会话删除的
++     * url 一并解除拉黑，其余 url 的会话删除保留（长按刷新=恢复该树）。
++     */
++    public static void invalidateTree(String rootUrl) {
++        List<String> pending = new ArrayList<>();
++        Set<String> visited = new HashSet<>();
++        List<String> treeUrls = new ArrayList<>();
++        pending.add(rootUrl);
++        visited.add(rootUrl);
++        while (!pending.isEmpty()) {
++            String cur = pending.remove(0);
++            treeUrls.add(cur);
++            FetchResult cached = CACHE.remove(cur);
++            if (cached == null) continue;
++            for (ConfigNodeBean n : cached.nodes) {
++                if (visited.add(n.url)) {
++                    pending.add(n.url);
++                }
++            }
++        }
++        SESSION_REMOVED.removeAll(treeUrls);
++    }
++
++    /** 检查 rootUrl 会话缓存子树（已展开部分）是否包含 target url（visited 防缓存 url 成环）。 */
++    public static boolean cacheTreeContains(String rootUrl, String target) {
++        if (TextUtils.isEmpty(target)) return false;
++        List<String> pending = new ArrayList<>();
++        Set<String> visited = new HashSet<>();
++        pending.add(rootUrl);
++        visited.add(rootUrl);
++        while (!pending.isEmpty()) {
++            String cur = pending.remove(0);
++            FetchResult cached = CACHE.get(cur);
++            if (cached == null) continue;
++            for (ConfigNodeBean n : cached.nodes) {
++                if (target.equals(n.url)) return true;
++                if (visited.add(n.url)) {
++                    pending.add(n.url);
++                }
++            }
++        }
++        return false;
++    }
++
++    /** 拉取并判型（带会话缓存；SESSION_REMOVED 过滤下级节点）。 */
++    public static void fetchNode(final String url, final NodeCallback callback) {
++        if (TextUtils.isEmpty(url)) {
++            callback.onError("链接为空");
++            return;
++        }
++        FetchResult cached = CACHE.get(url);
++        if (cached != null) {
++            callback.onSuccess(applySessionFilter(cached));
++            return;
++        }
++        OkGo.<String>get(toRequestUrl(url)).execute(new AbsCallback<String>() {
++            @Override
++            public void onSuccess(Response<String> response) {
++                try {
++                    FetchResult result = parseNodes(response.body(), url);
++                    CACHE.put(url, result);
++                    callback.onSuccess(applySessionFilter(result));
++                } catch (Throwable th) {
++                    callback.onError("解析失败: " + th.getMessage());
++                }
++            }
++
++            @Override
++            public String convertResponse(okhttp3.Response response) throws Throwable {
++                return response.body() == null ? "" : response.body().string();
++            }
++
++            @Override
++            public void onError(Response<String> response) {
++                super.onError(response);
++                Throwable t = response.getException();
++                callback.onError("拉取失败: " + (t == null ? "网络错误" : t.getMessage()));
++            }
++        });
++    }
++
++    private static FetchResult applySessionFilter(FetchResult src) {
++        if (SESSION_REMOVED.isEmpty() || src.nodes.isEmpty()) {
++            return src;
++        }
++        FetchResult out = new FetchResult();
++        out.type = src.type;
++        for (ConfigNodeBean node : src.nodes) {
++            if (!SESSION_REMOVED.contains(node.url)) {
++                out.nodes.add(node);
++            }
++        }
++        return out;
++    }
++
++    /**
++     * 判型核心：storeHouse→仓库列表 / urls→线路列表 / sites(或 spider+sites)→终端。
++     * 无法识别时抛 JSONException。
++     */
++    public static FetchResult parseNodes(String content, String fileUrl) throws org.json.JSONException {
++        FetchResult result = new FetchResult();
++        if (TextUtils.isEmpty(content)) {
++            throw new org.json.JSONException("内容为空");
++        }
++        JSONObject root = new JSONObject(content);
++        if (root.optJSONArray("storeHouse") != null) {
++            result.type = ConfigNodeBean.TYPE_WAREHOUSE;
++            JSONArray array = root.optJSONArray("storeHouse");
++            for (int i = 0; i < array.length(); i++) {
++                JSONObject item = array.optJSONObject(i);
++                if (item == null) continue;
++                String sourceUrl = item.optString("sourceUrl", "").trim();
++                if (TextUtils.isEmpty(sourceUrl)) continue;
++                String name = item.optString("sourceName", "").trim();
++                if (TextUtils.isEmpty(name)) name = sourceUrl;
++                result.nodes.add(new ConfigNodeBean(name, fixClanLink(fileUrl, sourceUrl),
++                        ConfigNodeBean.TYPE_WAREHOUSE, false));
++            }
++            return result;
++        }
++        if (root.optJSONArray("urls") != null) {
++            result.type = ConfigNodeBean.TYPE_LINE;
++            JSONArray array = root.optJSONArray("urls");
++            for (int i = 0; i < array.length(); i++) {
++                JSONObject item = array.optJSONObject(i);
++                if (item == null) continue;
++                String url = item.optString("url", "").trim();
++                if (TextUtils.isEmpty(url)) continue;
++                String name = item.optString("name", "").trim();
++                if (TextUtils.isEmpty(name)) name = url;
++                result.nodes.add(new ConfigNodeBean(name, fixClanLink(fileUrl, url),
++                        ConfigNodeBean.TYPE_LINE, false));
++            }
++            return result;
++        }
++        if (root.optJSONArray("sites") != null || !TextUtils.isEmpty(root.optString("spider", ""))) {
++            result.type = ConfigNodeBean.TYPE_TERMINAL;
++            return result;
++        }
++        throw new org.json.JSONException("无法识别的配置格式");
++    }
++
++    // ---------------- clan 协议 ----------------
++
++    /** clan:// 文件转 http 请求地址；本地 localhost 由 ControlManager 提供。 */
++    public static String toRequestUrl(String url) {
++        if (url != null && url.startsWith("clan://")) {
++            if (url.startsWith("clan://localhost/")) {
++                return url.replace("clan://localhost/", ControlManager.get().getAddress(true) + "file/");
++            }
++            String host = url.substring(7);
++            int end = host.indexOf('/');
++            return "http://" + host.substring(0, end) + "/file/" + host.substring(end + 1);
++        }
++        return url;
++    }
++
++    /** clan://localhost/x 相对多仓文件主机重写（影视仓 clanContentFix 参照）。 */
++    private static String fixClanLink(String fileUrl, String link) {
++        if (link == null || !link.startsWith("clan://localhost/")) {
++            return link;
++        }
++        String httpFileUrl = fileUrl != null && fileUrl.startsWith("clan://") ? toRequestUrl(fileUrl) : fileUrl;
++        String fix;
++        if (httpFileUrl != null && httpFileUrl.contains("/file/")) {
++            fix = httpFileUrl.substring(0, httpFileUrl.indexOf("/file/") + 6);
++        } else if (httpFileUrl != null && httpFileUrl.startsWith("http")) {
++            int idx = httpFileUrl.indexOf('/', httpFileUrl.indexOf("//") + 2);
++            fix = idx < 0 ? httpFileUrl + "/" : httpFileUrl.substring(0, idx + 1);
++        } else {
++            fix = ControlManager.get().getAddress(true) + "file/";
++        }
++        return link.replace("clan://localhost/", fix);
++    }
++}
+diff --git a/app/src/main/java/com/github/tvbox/osc/api/WarehouseRepo.java b/app/src/main/java/com/github/tvbox/osc/api/WarehouseRepo.java
+deleted file mode 100644
+index d1be865..0000000
+--- a/app/src/main/java/com/github/tvbox/osc/api/WarehouseRepo.java
++++ /dev/null
+@@ -1,188 +0,0 @@
+-package com.github.tvbox.osc.api;
+-
+-import android.text.TextUtils;
+-
+-import com.github.tvbox.osc.bean.WarehouseBean;
+-import com.github.tvbox.osc.util.HawkConfig;
+-import com.lzy.okgo.OkGo;
+-import com.lzy.okgo.callback.AbsCallback;
+-import com.lzy.okgo.model.Response;
+-import com.orhanobut.hawk.Hawk;
+-
+-import org.json.JSONArray;
+-import org.json.JSONObject;
+-
+-import java.util.ArrayList;
+-import java.util.List;
+-
+-/**
+- * 多仓数据层：管理推送链接列表与影视仓 storeHouse 解析。
+- * 层级：仓 > 接口 > 站源；推送链接(多仓文件) → storeHouse[] 仓 → 每仓即一份接口配置。
+- * 支持 http(s) 与 clan:// 协议（clan 本地条目按多仓文件所在主机重写）。
+- */
+-public final class WarehouseRepo {
+-
+-    /** 左栏推送链接列表操作回调。 */
+-    public interface WarehouseCallback {
+-       public void onSuccess(List<WarehouseBean> list);
+-
+-        void onError(String msg);
+-    }
+-
+-    /** 解析结果过滤黑名单（用户已删除的仓条目）。 */
+-    private static List<WarehouseBean> filterBlacklist(List<WarehouseBean> list) {
+-        List<String> blacklist = getWarehouseBlacklist();
+-        if (blacklist.isEmpty()) {
+-            return list;
+-        }
+-        List<WarehouseBean> result = new ArrayList<>();
+-        for (WarehouseBean bean : list) {
+-            if (!blacklist.contains(bean.sourceUrl)) {
+-                result.add(bean);
+-            }
+-        }
+-        return result;
+-    }
+-
+-    private WarehouseRepo() {
+-    }
+-
+-    public static List<String> getPushSources() {
+-        ArrayList<String> list = Hawk.get(HawkConfig.PUSH_SOURCE_LIST, new ArrayList<>());
+-        return list == null ? new ArrayList<>() : list;
+-    }
+-
+-    public static void savePushSources(List<String> sources) {
+-        Hawk.put(HawkConfig.PUSH_SOURCE_LIST, sources == null ? new ArrayList<String>() : new ArrayList<>(sources));
+-    }
+-
+-    public static void addPushSource(String url) {
+-        List<String> list = getPushSources();
+-        if (!list.contains(url)) {
+-            list.add(url);
+-            savePushSources(list);
+-        }
+-    }
+-
+-    public static void removePushSource(String url) {
+-        List<String> list = getPushSources();
+-        list.remove(url);
+-        savePushSources(list);
+-    }
+-
+-    /** 黑名单：用户手动删除的仓条目（按配置链接记录），解析后过滤。 */
+-    public static List<String> getWarehouseBlacklist() {
+-        ArrayList<String> list = Hawk.get(HawkConfig.WAREHOUSE_BLACKLIST, new ArrayList<>());
+-        return list == null ? new ArrayList<>() : list;
+-    }
+-
+-    public static void addWarehouseBlacklist(String sourceUrl) {
+-        List<String> list = getWarehouseBlacklist();
+-        if (!list.contains(sourceUrl)) {
+-            list.add(sourceUrl);
+-            Hawk.put(HawkConfig.WAREHOUSE_BLACKLIST, new ArrayList<>(list));
+-        }
+-    }
+-
+-    /** 拉取并解析一个推送链接下的多仓列表（重拉整棵资源树入口）。 */
+-    public static void fetchStoreHouse(String url, final WarehouseCallback callback) {
+-        if (TextUtils.isEmpty(url)) {
+-            callback.onError("链接为空");
+-            return;
+-        }
+-        String requestUrl = toRequestUrl(url);
+-        OkGo.<String>get(requestUrl).execute(new AbsCallback<String>() {
+-            @Override
+-            public void onSuccess(Response<String> response) {
+-                try {
+-                    List<WarehouseBean> list = filterBlacklist(parseStoreHouse(url, response.body()));
+-                    if (list.isEmpty()) {
+-                        callback.onError("未找到 storeHouse 多仓数据");
+-                    } else {
+-                        callback.onSuccess(list);
+-                    }
+-                } catch (Throwable th) {
+-                    callback.onError("多仓解析失败: " + th.getMessage());
+-                }
+-            }
+-
+-            @Override
+-            public String convertResponse(okhttp3.Response response) throws Throwable {
+-                return response.body() == null ? "" : response.body().string();
+-            }
+-
+-            @Override
+-            public void onError(Response<String> response) {
+-                super.onError(response);
+-                Throwable t = response.getException();
+-                callback.onError("拉取失败: " + (t == null ? "网络错误" : t.getMessage()));
+-            }
+-        });
+-    }
+-
+-    /**
+-     * 解析影视仓 storeHouse 格式：
+-     * {"storeHouse":[{"sourceName":"名","sourceUrl":"配置链接"}]}
+-     */
+-    public static List<WarehouseBean> parseStoreHouse(String fileUrl, String content) throws org.json.JSONException {
+-        List<WarehouseBean> result = new ArrayList<>();
+-        if (TextUtils.isEmpty(content)) {
+-            return result;
+-        }
+-        JSONObject root = new JSONObject(content);
+-        JSONArray array = root.optJSONArray("storeHouse");
+-        if (array == null) {
+-            return result;
+-        }
+-        for (int i = 0; i < array.length(); i++) {
+-            JSONObject item = array.optJSONObject(i);
+-            if (item == null) {
+-                continue;
+-            }
+-            String name = item.optString("sourceName", "").trim();
+-            String sourceUrl = item.optString("sourceUrl", "").trim();
+-            if (TextUtils.isEmpty(sourceUrl)) {
+-                continue;
+-            }
+-            if (TextUtils.isEmpty(name)) {
+-                name = sourceUrl;
+-            }
+-            result.add(new WarehouseBean(name, fixClanLink(fileUrl, sourceUrl)));
+-        }
+-        return result;
+-    }
+-
+-    /** clan:// 文件转 http 请求地址；本地 localhost 由 ControlManager 提供。 */
+-    public static String toRequestUrl(String url) {
+-        if (url != null && url.startsWith("clan://")) {
+-            if (url.startsWith("clan://localhost/")) {
+-                return url.replace("clan://localhost/", com.github.tvbox.osc.server.ControlManager.get().getAddress(true) + "file/");
+-            }
+-            String host = url.substring(7);
+-            int end = host.indexOf('/');
+-            return "http://" + host.substring(0, end) + "/file/" + host.substring(end + 1);
+-        }
+-        return url;
+-    }
+-
+-    /**
+-     * 重写仓条目里的 clan 链接：clan://localhost/x 相对多仓文件主机，
+-     * 参照影视仓 clanContentFix 逻辑，替换为其主机根前缀。
+-     */
+-    private static String fixClanLink(String fileUrl, String link) {
+-        if (link == null || !link.startsWith("clan://localhost/")) {
+-            return link;
+-        }
+-        String httpFileUrl = fileUrl != null && fileUrl.startsWith("clan://") ? toRequestUrl(fileUrl) : fileUrl;
+-        String fix;
+-        if (httpFileUrl != null && httpFileUrl.contains("/file/")) {
+-            fix = httpFileUrl.substring(0, httpFileUrl.indexOf("/file/") + 6);
+-        } else if (httpFileUrl != null && httpFileUrl.startsWith("http")) {
+-            int idx = httpFileUrl.indexOf('/', httpFileUrl.indexOf("//") + 2);
+-            fix = idx < 0 ? httpFileUrl + "/" : httpFileUrl.substring(0, idx + 1);
+-        } else {
+-            fix = com.github.tvbox.osc.server.ControlManager.get().getAddress(true) + "file/";
+-        }
+-        return link.replace("clan://localhost/", fix);
+-    }
+-}
+diff --git a/app/src/main/java/com/github/tvbox/osc/bean/ConfigItem.java b/app/src/main/java/com/github/tvbox/osc/bean/ConfigItem.java
+new file mode 100644
+index 0000000..f269733
+--- /dev/null
++++ b/app/src/main/java/com/github/tvbox/osc/bean/ConfigItem.java
+@@ -0,0 +1,15 @@
++package com.github.tvbox.osc.bean;
++
++/** 一级配置条目（用户推送，持久化于 Hawk CONFIG_LIST）。 */
++public class ConfigItem {
++    public String name;
++    public String url;
++
++    public ConfigItem() {
++    }
++
++    public ConfigItem(String name, String url) {
++        this.name = name;
++        this.url = url;
++    }
++}
+diff --git a/app/src/main/java/com/github/tvbox/osc/bean/ConfigNodeBean.java b/app/src/main/java/com/github/tvbox/osc/bean/ConfigNodeBean.java
+new file mode 100644
+index 0000000..851c7af
+--- /dev/null
++++ b/app/src/main/java/com/github/tvbox/osc/bean/ConfigNodeBean.java
+@@ -0,0 +1,38 @@
++package com.github.tvbox.osc.bean;
++
++/** 配置弹窗树节点：配置>仓库>线路 三级通用。 */
++public class ConfigNodeBean {
++    public static final int TYPE_CONFIG = 0;    // 一级：用户推送的配置条目
++    public static final int TYPE_WAREHOUSE = 1; // 二级：storeHouse[].sourceName
++    public static final int TYPE_LINE = 2;      // 三级：urls[].name 或虚拟线路
++    public static final int TYPE_TERMINAL = 3;  // sites 终端配置（可激活）
++
++    public String name;
++    public String url;
++    public int type;
++    /** 是否虚拟补全节点（展示/删除逻辑区分） */
++    public boolean virtual;
++
++    public ConfigNodeBean() {
++    }
++
++    public ConfigNodeBean(String name, String url, int type, boolean virtual) {
++        this.name = name;
++        this.url = url;
++        this.type = type;
++        this.virtual = virtual;
++    }
++
++    @Override
++    public boolean equals(Object o) {
++        if (this == o) return true;
++        if (o == null || getClass() != o.getClass()) return false;
++        ConfigNodeBean that = (ConfigNodeBean) o;
++        return url != null ? url.equals(that.url) : that.url == null;
++    }
++
++    @Override
++    public int hashCode() {
++        return url == null ? 0 : url.hashCode();
++    }
++}
+diff --git a/app/src/main/java/com/github/tvbox/osc/bean/WarehouseBean.java b/app/src/main/java/com/github/tvbox/osc/bean/WarehouseBean.java
+deleted file mode 100644
+index 148a0d9..0000000
+--- a/app/src/main/java/com/github/tvbox/osc/bean/WarehouseBean.java
++++ /dev/null
+@@ -1,33 +0,0 @@
+-package com.github.tvbox.osc.bean;
+-
+-/**
+- * 多仓（影视仓 storeHouse 格式）单个仓条目。
+- * 层级：仓 > 接口 > 站源；一个仓指向一份 TVBox 配置链接。
+- */
+-public class WarehouseBean {
+-    /** 仓名，对应 storeHouse[].sourceName */
+-    public String sourceName;
+-    /** 该仓的配置链接，对应 storeHouse[].sourceUrl，支持 http(s)/clan */
+-    public String sourceUrl;
+-
+-    public WarehouseBean() {
+-    }
+-
+-    public WarehouseBean(String sourceName, String sourceUrl) {
+-        this.sourceName = sourceName;
+-        this.sourceUrl = sourceUrl;
+-    }
+-
+-    @Override
+-    public boolean equals(Object o) {
+-        if (this == o) return true;
+-        if (o == null || getClass() != o.getClass()) return false;
+-        WarehouseBean that = (WarehouseBean) o;
+-        return sourceUrl != null ? sourceUrl.equals(that.sourceUrl) : that.sourceUrl == null;
+-    }
+-
+-    @Override
+-    public int hashCode() {
+-        return sourceUrl == null ? 0 : sourceUrl.hashCode();
+-    }
+-}
+diff --git a/app/src/main/java/com/github/tvbox/osc/ui/activity/HomeActivity.java b/app/src/main/java/com/github/tvbox/osc/ui/activity/HomeActivity.java
+index 4962472..7310e26 100644
+--- a/app/src/main/java/com/github/tvbox/osc/ui/activity/HomeActivity.java
++++ b/app/src/main/java/com/github/tvbox/osc/ui/activity/HomeActivity.java
+@@ -354,22 +354,22 @@ public class HomeActivity extends BaseActivity {
+             public void onClick(View v) {
+                 FastClickCheckUtil.check(v);
+                 int id = v.getId();
+                 if (id == R.id.navHome) {
+                     backToHome();
+                 } else if (id == R.id.navLive) {
+                     jumpActivity(LivePlayActivity.class);
+                 } else if (id == R.id.navSearch) {
+                     jumpActivity(SearchActivity.class);
+                 } else if (id == R.id.navPush) {
+-                    // 多仓推送对话框（推送链接 > 仓 > 接口）
+-                    new com.github.tvbox.osc.ui.dialog.WarehouseDialog(HomeActivity.this).show();
++                    // 配置对话框（多仓/接口配置）
++                    new com.github.tvbox.osc.ui.dialog.ConfigDialog(HomeActivity.this).show();
+                 } else if (id == R.id.navSetting) {
+                     jumpActivity(SettingActivity.class);
+                 }
+             }
+         };
+         int[] navIds = {R.id.navHome, R.id.navLive, R.id.navSearch, R.id.navPush, R.id.navSetting};
+         for (int navId : navIds) {
+             View nav = findViewById(navId);
+             nav.setOnClickListener(listener);
+             FocusScaleHelper.bind(nav);
+diff --git a/app/src/main/java/com/github/tvbox/osc/ui/adapter/ConfigAdapter.java b/app/src/main/java/com/github/tvbox/osc/ui/adapter/ConfigAdapter.java
+new file mode 100644
+index 0000000..7e7605e
+--- /dev/null
++++ b/app/src/main/java/com/github/tvbox/osc/ui/adapter/ConfigAdapter.java
+@@ -0,0 +1,39 @@
++package com.github.tvbox.osc.ui.adapter;
++
++import android.view.View;
++import android.widget.TextView;
++
++import com.chad.library.adapter.base.BaseQuickAdapter;
++import com.chad.library.adapter.base.BaseViewHolder;
++import com.github.tvbox.osc.R;
++import com.github.tvbox.osc.bean.ConfigNodeBean;
++
++import java.util.ArrayList;
++
++/**
++ * 配置弹窗三级通用列表适配器（名称+删除按钮+生效✓）。
++ */
++public class ConfigAdapter extends BaseQuickAdapter<ConfigNodeBean, BaseViewHolder> {
++
++    /** 当前生效的配置链接，用于标记"✓"。 */
++    private String currentUrl = "";
++
++    public ConfigAdapter() {
++        super(R.layout.item_config_row, new ArrayList<>());
++    }
++
++    public void setCurrentUrl(String url) {
++        currentUrl = url == null ? "" : url;
++        notifyDataSetChanged();
++    }
++
++    @Override
++    protected void convert(BaseViewHolder helper, ConfigNodeBean item) {
++        TextView tvName = helper.getView(R.id.tvName);
++        TextView tvSelected = helper.getView(R.id.ivSelected);
++        tvName.setText(item.name);
++        boolean selected = !currentUrl.isEmpty() && currentUrl.equals(item.url);
++        tvSelected.setVisibility(selected ? View.VISIBLE : View.GONE);
++        helper.addOnClickListener(R.id.ivDelete);
++    }
++}
+diff --git a/app/src/main/java/com/github/tvbox/osc/ui/adapter/PushSourceAdapter.java b/app/src/main/java/com/github/tvbox/osc/ui/adapter/PushSourceAdapter.java
+deleted file mode 100644
+index d16cfea..0000000
+--- a/app/src/main/java/com/github/tvbox/osc/ui/adapter/PushSourceAdapter.java
++++ /dev/null
+@@ -1,41 +0,0 @@
+-package com.github.tvbox.osc.ui.adapter;
+-
+-import android.widget.ImageView;
+-import android.widget.TextView;
+-
+-import androidx.core.content.ContextCompat;
+-
+-import com.chad.library.adapter.base.BaseQuickAdapter;
+-import com.chad.library.adapter.base.BaseViewHolder;
+-import com.github.tvbox.osc.R;
+-
+-import java.util.ArrayList;
+-
+-/**
+- * 多仓对话框左栏：推送链接列表。
+- */
+-public class PushSourceAdapter extends BaseQuickAdapter<String, BaseViewHolder> {
+-
+-    /** 当前左栏选中的推送链接，高亮显示。 */
+-    private String selectedUrl;
+-
+-    public PushSourceAdapter() {
+-        super(R.layout.item_push_source, new ArrayList<>());
+-    }
+-
+-    public void setSelectedUrl(String url) {
+-        selectedUrl = url;
+-        notifyDataSetChanged();
+-    }
+-
+-    @Override
+-    protected void convert(BaseViewHolder helper, String item) {
+-        com.github.tvbox.osc.ui.tv.focus.FocusScaleHelper.bind(helper.itemView);
+-        TextView tvSourceUrl = helper.getView(R.id.tvSourceUrl);
+-        tvSourceUrl.setText(item);
+-        boolean selected = item.equals(selectedUrl);
+-        tvSourceUrl.setTextColor(ContextCompat.getColor(mContext,
+-                selected ? R.color.atv_accent : R.color.atv_text_secondary));
+-        helper.addOnClickListener(R.id.ivDelete);
+-    }
+-}
+diff --git a/app/src/main/java/com/github/tvbox/osc/ui/adapter/WarehouseAdapter.java b/app/src/main/java/com/github/tvbox/osc/ui/adapter/WarehouseAdapter.java
+deleted file mode 100644
+index 5b2d0b7..0000000
+--- a/app/src/main/java/com/github/tvbox/osc/ui/adapter/WarehouseAdapter.java
++++ /dev/null
+@@ -1,46 +0,0 @@
+-package com.github.tvbox.osc.ui.adapter;
+-
+-import android.view.View;
+-import android.widget.TextView;
+-
+-import androidx.core.content.ContextCompat;
+-
+-import com.chad.library.adapter.base.BaseQuickAdapter;
+-import com.chad.library.adapter.base.BaseViewHolder;
+-import com.github.tvbox.osc.R;
+-import com.github.tvbox.osc.bean.WarehouseBean;
+-
+-import java.util.ArrayList;
+-
+-/**
+- * 多仓对话框右栏：当前推送链接下的仓（接口）列表。
+- */
+-public class WarehouseAdapter extends BaseQuickAdapter<WarehouseBean, BaseViewHolder> {
+-
+-    /** 当前生效的接口配置链接，用于标记"当前"。 */
+-    private String currentApi;
+-
+-    public WarehouseAdapter() {
+-        super(R.layout.item_warehouse, new ArrayList<>());
+-    }
+-
+-    public void setCurrentApi(String api) {
+-        currentApi = api;
+-        notifyDataSetChanged();
+-    }
+-
+-    @Override
+-    protected void convert(BaseViewHolder helper, WarehouseBean item) {
+-        com.github.tvbox.osc.ui.tv.focus.FocusScaleHelper.bind(helper.itemView);
+-        TextView tvName = helper.getView(R.id.tvWarehouseName);
+-        TextView tvUrl = helper.getView(R.id.tvWarehouseUrl);
+-        TextView tvMark = helper.getView(R.id.tvCurrentMark);
+-        tvName.setText(item.sourceName);
+-        tvUrl.setText(item.sourceUrl);
+-        boolean current = item.sourceUrl != null && item.sourceUrl.equals(currentApi);
+-        tvMark.setVisibility(current ? View.VISIBLE : View.GONE);
+-        tvName.setTextColor(ContextCompat.getColor(mContext,
+-                current ? R.color.atv_accent : R.color.atv_text_primary));
+-        helper.addOnClickListener(R.id.ivDelete);
+-    }
+-}
+diff --git a/app/src/main/java/com/github/tvbox/osc/ui/dialog/ConfigDialog.java b/app/src/main/java/com/github/tvbox/osc/ui/dialog/ConfigDialog.java
+new file mode 100644
+index 0000000..3f0bc39
+--- /dev/null
++++ b/app/src/main/java/com/github/tvbox/osc/ui/dialog/ConfigDialog.java
+@@ -0,0 +1,343 @@
++package com.github.tvbox.osc.ui.dialog;
++
++import android.content.Context;
++import android.content.Intent;
++import android.text.TextUtils;
++import android.view.KeyEvent;
++import android.widget.EditText;
++import android.widget.TextView;
++import android.widget.Toast;
++
++import androidx.annotation.NonNull;
++
++import com.chad.library.adapter.base.BaseQuickAdapter;
++import com.github.tvbox.osc.R;
++import com.github.tvbox.osc.api.ConfigRepo;
++import com.github.tvbox.osc.bean.ConfigItem;
++import com.github.tvbox.osc.bean.ConfigNodeBean;
++import com.github.tvbox.osc.ui.activity.HomeActivity;
++import com.github.tvbox.osc.ui.adapter.ConfigAdapter;
++import com.github.tvbox.osc.util.HawkConfig;
++import com.github.tvbox.osc.util.HistoryHelper;
++import com.github.tvbox.osc.viewmodel.SourceViewModel;
++import com.orhanobut.hawk.Hawk;
++import com.owen.tvrecyclerview.widget.TvRecyclerView;
++import com.owen.tvrecyclerview.widget.V7LinearLayoutManager;
++
++import org.jetbrains.annotations.NotNull;
++
++import java.util.ArrayList;
++import java.util.List;
++
++/**
++ * 配置弹窗：配置 > 仓库 > 线路 三级钻取。
++ * 每行删除按钮（配置级持久删、仓库/线路级会话删）；长按配置=刷新整棵资源树；
++ * 线路激活走 API_URL + clearRuntimeCache + 重启首页现有链路。
++ */
++public class ConfigDialog extends BaseDialog {
++
++    private final ConfigAdapter adapter = new ConfigAdapter();
++    /** 层级路径上下文：面包屑展示与返回回退 */
++    private final List<String> breadcrumb = new ArrayList<>();
++    /** 层栈：栈顶为当前展示层（0=配置/1=仓库/2=线路，层级由节点判型决定） */
++    private final List<Level> stack = new ArrayList<>();
++    private TextView tvBreadcrumb;
++    private TextView tvTip;
++    private EditText etName;
++    private EditText etUrl;
++
++    private static class Level {
++        List<ConfigNodeBean> nodes = new ArrayList<>();
++        /** 本层压入时向面包屑添加的条数（虚拟补层为 2：本级名+虚拟仓库名），返回时同步回退 */
++        int crumbs;
++    }
++
++    public ConfigDialog(@NonNull @NotNull Context context) {
++        super(context);
++        setContentView(R.layout.dialog_config);
++        setCanceledOnTouchOutside(false);
++
++        tvBreadcrumb = findViewById(R.id.tvBreadcrumb);
++        tvTip = findViewById(R.id.tvTip);
++        etName = findViewById(R.id.etName);
++        etUrl = findViewById(R.id.etUrl);
++        TvRecyclerView rvConfig = findViewById(R.id.rvConfig);
++        rvConfig.setLayoutManager(new V7LinearLayoutManager(getContext(), V7LinearLayoutManager.VERTICAL, false));
++        rvConfig.setAdapter(adapter);
++
++        adapter.setOnItemClickListener((a, view, position) -> onItemClicked(adapter.getItem(position)));
++        adapter.setOnItemLongClickListener((a, view, position) -> onItemLongClicked(adapter.getItem(position)));
++        adapter.setOnItemChildClickListener((a, view, position) -> {
++            if (view.getId() == R.id.ivDelete) {
++                onDeleteClicked(adapter.getItem(position));
++            }
++        });
++
++        findViewById(R.id.ivClose).setOnClickListener(v -> dismiss());
++        findViewById(R.id.btnScan).setOnClickListener(v -> new RemoteDialog(getContext()).show());
++        findViewById(R.id.btnConfirm).setOnClickListener(v -> onConfirmClicked());
++
++        ConfigRepo.resetSession();
++        Level root = new Level();
++        root.nodes.addAll(buildConfigNodes());
++        stack.add(root);
++        refreshUi();
++    }
++
++    // ---------------- 层级渲染 ----------------
++
++    private List<ConfigNodeBean> buildConfigNodes() {
++        List<ConfigNodeBean> nodes = new ArrayList<>();
++        for (ConfigItem item : ConfigRepo.getConfigList()) {
++            nodes.add(new ConfigNodeBean(item.name, item.url, ConfigNodeBean.TYPE_CONFIG, false));
++        }
++        return nodes;
++    }
++
++    /** 压入新层并记录其贡献的面包屑条数（crumb 传 null 跳过），保证返回回退同步。 */
++    private void pushLevel(Level level, String... crumbs) {
++        int added = 0;
++        for (String crumb : crumbs) {
++            if (crumb != null) {
++                breadcrumb.add(crumb);
++                added++;
++            }
++        }
++        level.crumbs = added;
++        stack.add(level);
++        refreshUi();
++    }
++
++    private void refreshUi() {
++        Level top = stack.get(stack.size() - 1);
++        adapter.setNewData(top.nodes);
++        adapter.setCurrentUrl(ConfigRepo.getActiveUrl());
++        tvBreadcrumb.setText(joinBreadcrumb());
++        tvTip.setText(top.nodes.isEmpty() ? "暂无条目，在下方输入链接推送" : "共 " + top.nodes.size() + " 条");
++    }
++
++    private String joinBreadcrumb() {
++        StringBuilder sb = new StringBuilder();
++        for (int i = 0; i < breadcrumb.size(); i++) {
++            if (i > 0) sb.append(" > ");
++            sb.append(breadcrumb.get(i));
++        }
++        return sb.toString();
++    }
++
++    private void backLevel() {
++        if (stack.size() <= 1) {
++            dismiss();
++            return;
++        }
++        Level top = stack.remove(stack.size() - 1);
++        for (int i = 0; i < top.crumbs && !breadcrumb.isEmpty(); i++) {
++            breadcrumb.remove(breadcrumb.size() - 1);
++        }
++        refreshUi();
++    }
++
++    /** 回退到根（配置级）并清空面包屑，供长按刷新/删除/新增后重钻。 */
++    private void popToRoot() {
++        while (stack.size() > 1) {
++            stack.remove(stack.size() - 1);
++            if (!breadcrumb.isEmpty()) breadcrumb.remove(breadcrumb.size() - 1);
++        }
++        breadcrumb.clear();
++    }
++
++    /** 用最新持久配置列表原地重建根层（避免 showConfigLevel 重复压栈）。 */
++    private void rebuildRootLevel() {
++        popToRoot();
++        Level root = stack.get(0);
++        root.nodes.clear();
++        root.nodes.addAll(buildConfigNodes());
++        refreshUi();
++    }
++
++    @Override
++    public boolean onKeyDown(int keyCode, KeyEvent event) {
++        if (keyCode == KeyEvent.KEYCODE_BACK) {
++            backLevel();
++            return true;
++        }
++        return super.onKeyDown(keyCode, event);
++    }
++
++    // ---------------- 条目行为 ----------------
++
++    private void onItemClicked(ConfigNodeBean node) {
++        if (node == null) return;
++        if (node.type == ConfigNodeBean.TYPE_TERMINAL) {
++            applyLine(node); // 终端节点直接激活
++        } else {
++            fetchAndEnter(node); // 配置/仓库/线路均拉取判型决定下一层
++        }
++    }
++
++    private void fetchAndEnter(final ConfigNodeBean node) {
++        tvTip.setText("正在拉取…");
++        ConfigRepo.fetchNode(node.url, new ConfigRepo.NodeCallback() {
++            @Override
++            public void onSuccess(ConfigRepo.FetchResult result) {
++                if (!isShowing()) return;
++                enterByType(result, node.url, node.name);
++            }
++
++            @Override
++            public void onError(String msg) {
++                if (!isShowing()) return;
++                tvTip.setText(msg);
++                Toast.makeText(getContext(), msg, Toast.LENGTH_SHORT).show();
++            }
++        });
++    }
++
++    /** 按判型结果进入下一层，缺失层级补虚拟节点保证三级完整。 */
++    private void enterByType(ConfigRepo.FetchResult result, String url, String name) {
++        if (result.type == ConfigNodeBean.TYPE_WAREHOUSE) {
++            // 仓库列表：配置点入 or 仓库套娃，均以本级名加深面包屑、列表替换
++            Level level = new Level();
++            level.nodes.addAll(result.nodes);
++            pushLevel(level, name);
++        } else if (result.type == ConfigNodeBean.TYPE_LINE) {
++            // urls 型线路列表：缺仓库层 → 面包屑补「本级名 > 虚拟仓库名」，直接展示线路
++            Level level = new Level();
++            level.nodes.addAll(result.nodes);
++            pushLevel(level, name, ConfigRepo.genVirtualName("自定义仓库"));
++        } else {
++            // TERMINAL：补虚拟仓库 + 单条虚拟线路（url=本级自身，可激活）
++            Level level = new Level();
++            level.nodes.add(new ConfigNodeBean(ConfigRepo.genVirtualName("自定义线路"), url,
++                    ConfigNodeBean.TYPE_TERMINAL, true));
++            pushLevel(level, name, ConfigRepo.genVirtualName("自定义仓库"));
++        }
++    }
++
++    private boolean onItemLongClicked(ConfigNodeBean node) {
++        if (node == null) return true;
++        if (node.type != ConfigNodeBean.TYPE_CONFIG) {
++            return true; // 长按刷新仅配置级
++        }
++        ConfigRepo.invalidateTree(node.url); // 整棵资源树缓存失效（含已缓存的下级节点）
++        popToRoot();
++        fetchAndEnter(node); // 重钻该配置
++        return true;
++    }
++
++    private void onDeleteClicked(final ConfigNodeBean node) {
++        if (node == null) return;
++        if (node.type == ConfigNodeBean.TYPE_CONFIG) {
++            deleteConfig(node);
++        } else {
++            // 仓库/线路级：会话内移除（无持久拉黑，刷新/重进弹窗恢复）
++            confirmDelete("从列表移除「" + node.name + "」？（刷新后恢复）", new Runnable() {
++                @Override
++                public void run() {
++                    ConfigRepo.sessionRemove(node.url);
++                    stack.get(stack.size() - 1).nodes.remove(node);
++                    refreshUi();
++                }
++            });
++        }
++    }
++
++    private void deleteConfig(final ConfigNodeBean node) {
++        final String activeUrl = ConfigRepo.getActiveUrl();
++        String tip = activeUrl.isEmpty()
++                ? "删除「" + node.name + "」？"
++                : "删除「" + node.name + "」？若当前源来自该配置将恢复默认。";
++        confirmDelete(tip, new Runnable() {
++            @Override
++            public void run() {
++                ConfigRepo.removeConfigItem(node.url);
++                // 该配置自身即生效源（TERMINAL 经虚拟线路激活时 CONFIG_ACTIVE==config.url，
++                // cacheTreeContains 只查子孙查不到根）或其缓存树含生效线路 → 回默认源并重载
++                if (!activeUrl.isEmpty()
++                        && (node.url.equals(activeUrl) || ConfigRepo.cacheTreeContains(node.url, activeUrl))) {
++                    ConfigRepo.setActiveUrl("");
++                    Hawk.put(HawkConfig.API_URL, "");
++                    SourceViewModel.clearRuntimeCache();
++                    dismiss();
++                    Intent intent = new Intent(getContext(), HomeActivity.class);
++                    intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
++                    getContext().startActivity(intent);
++                    return;
++                }
++                rebuildRootLevel();
++            }
++        });
++    }
++
++    // ---------------- 推送与激活 ----------------
++
++    private void onConfirmClicked() {
++        String url = etUrl.getText().toString().trim();
++        if (TextUtils.isEmpty(url)) {
++            Toast.makeText(getContext(), "请输入配置链接", Toast.LENGTH_SHORT).show();
++            return;
++        }
++        String name = etName.getText().toString().trim();
++        if (TextUtils.isEmpty(name)) {
++            name = ConfigRepo.genConfigName();
++        }
++        final ConfigNodeBean node = new ConfigNodeBean(name, url, ConfigNodeBean.TYPE_CONFIG, false);
++        if (!ConfigRepo.addConfigItem(node.name, node.url)) {
++            Toast.makeText(getContext(), "该链接已存在", Toast.LENGTH_SHORT).show();
++            return;
++        }
++        etName.setText("");
++        etUrl.setText("");
++        rebuildRootLevel(); // 根层带上新条目并回到配置级
++        fetchAndEnter(node); // 加入后自动钻入该配置
++    }
++
++    /** 激活线路（沿用既有生效链路，另记 CONFIG_ACTIVE 供✓回显）。 */
++    private void applyLine(final ConfigNodeBean node) {
++        String oldApi = Hawk.get(HawkConfig.API_URL, "");
++        if (node.url.equals(oldApi)) {
++            dismiss();
++            return;
++        }
++        new TipDialog(getContext(), "切换到「" + node.name + "」并重载配置？", "取消", "确定",
++                new TipDialog.OnListener() {
++                    @Override
++                    public void left() {
++                    }
++
++                    @Override
++                    public void right() {
++                        SourceViewModel.clearRuntimeCache();
++                        Hawk.put(HawkConfig.API_URL, node.url);
++                        ConfigRepo.setActiveUrl(node.url);
++                        HistoryHelper.setApiHistory(node.url);
++                        dismiss();
++                        // 整套配置重载：重建 HomeActivity（useCache=false 全量 loadConfig）
++                        Intent intent = new Intent(getContext(), HomeActivity.class);
++                        intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
++                        getContext().startActivity(intent);
++                    }
++
++                    @Override
++                    public void cancel() {
++                    }
++                }).show();
++    }
++
++    private void confirmDelete(String tip, final Runnable action) {
++        new TipDialog(getContext(), tip, "取消", "删除", new TipDialog.OnListener() {
++            @Override
++            public void left() {
++            }
++
++            @Override
++            public void right() {
++                action.run();
++            }
++
++            @Override
++            public void cancel() {
++            }
++        }).show();
++    }
++}
+diff --git a/app/src/main/java/com/github/tvbox/osc/ui/dialog/WarehouseDialog.java b/app/src/main/java/com/github/tvbox/osc/ui/dialog/WarehouseDialog.java
+deleted file mode 100644
+index d52670c..0000000
+--- a/app/src/main/java/com/github/tvbox/osc/ui/dialog/WarehouseDialog.java
++++ /dev/null
+@@ -1,244 +0,0 @@
+-package com.github.tvbox.osc.ui.dialog;
+-
+-import android.content.Context;
+-import android.content.Intent;
+-import android.text.TextUtils;
+-import android.view.View;
+-import android.widget.EditText;
+-import android.widget.FrameLayout;
+-import android.widget.ImageView;
+-import android.widget.LinearLayout;
+-import android.widget.TextView;
+-import android.widget.Toast;
+-
+-import androidx.annotation.NonNull;
+-
+-import com.github.tvbox.osc.R;
+-import com.github.tvbox.osc.api.WarehouseRepo;
+-import com.github.tvbox.osc.bean.WarehouseBean;
+-import com.github.tvbox.osc.server.ControlManager;
+-import com.github.tvbox.osc.ui.adapter.PushSourceAdapter;
+-import com.github.tvbox.osc.ui.adapter.WarehouseAdapter;
+-import com.github.tvbox.osc.ui.activity.HomeActivity;
+-import com.github.tvbox.osc.ui.tv.QRCodeGen;
+-import com.github.tvbox.osc.util.HawkConfig;
+-import com.github.tvbox.osc.util.HistoryHelper;
+-import com.github.tvbox.osc.viewmodel.SourceViewModel;
+-import com.orhanobut.hawk.Hawk;
+-import com.owen.tvrecyclerview.widget.TvRecyclerView;
+-import com.owen.tvrecyclerview.widget.V7LinearLayoutManager;
+-
+-import org.jetbrains.annotations.NotNull;
+-
+-import me.jessyan.autosize.utils.AutoSizeUtils;
+-
+-/**
+- * 多仓推送对话框（参考影视仓）：
+- * 左栏 = 推送链接列表（可添加/删除/刷新重拉整棵资源树）；
+- * 右栏 = 当前推送链接下的多仓接口列表（sourceName 展示、可切换、可删除）；
+- * 顶部保留扫码远程推送二维码。
+- * 选中接口后整套配置重载并回首页。
+- */
+-public class WarehouseDialog extends BaseDialog {
+-
+-    private final PushSourceAdapter sourceAdapter = new PushSourceAdapter();
+-    private final WarehouseAdapter warehouseAdapter = new WarehouseAdapter();
+-    private String selectedSource;
+-
+-    public WarehouseDialog(@NonNull @NotNull Context context) {
+-        super(context);
+-        setContentView(R.layout.dialog_warehouse);
+-        setCanceledOnTouchOutside(false);
+-
+-        TvRecyclerView rvPushSources = findViewById(R.id.rvPushSources);
+-        TvRecyclerView rvWarehouses = findViewById(R.id.rvWarehouses);
+-        TextView tvAddress = findViewById(R.id.tvAddress);
+-        ImageView ivQRCode = findViewById(R.id.ivQRCode);
+-        View btnAddSource = findViewById(R.id.btnAddSource);
+-        View btnRefreshTree = findViewById(R.id.btnRefreshTree);
+-        View ivClose = findViewById(R.id.ivClose);
+-        TextView tvWarehouseTip = findViewById(R.id.tvWarehouseTip);
+-
+-        rvPushSources.setLayoutManager(new V7LinearLayoutManager(getContext(), V7LinearLayoutManager.VERTICAL, false));
+-        rvPushSources.setAdapter(sourceAdapter);
+-        rvWarehouses.setLayoutManager(new V7LinearLayoutManager(getContext(), V7LinearLayoutManager.VERTICAL, false));
+-        rvWarehouses.setAdapter(warehouseAdapter);
+-
+-        sourceAdapter.setOnItemClickListener((adapter, view, position) -> {
+-            String url = sourceAdapter.getItem(position);
+-            if (url != null) {
+-                selectPushSource(url, tvWarehouseTip);
+-            }
+-        });
+-        sourceAdapter.setOnItemChildClickListener((adapter, view, position) -> {
+-            if (view.getId() == R.id.ivDelete) {
+-                String url = sourceAdapter.getItem(position);
+-                confirmDelete("删除该推送链接及其资源树？", () -> {
+-                    WarehouseRepo.removePushSource(url);
+-                    refreshSourceList();
+-                    if (url != null && url.equals(selectedSource)) {
+-                        selectedSource = null;
+-                        warehouseAdapter.setNewData(new java.util.ArrayList<>());
+-                        tvWarehouseTip.setText("接口列表（仓 > 接口 > 站源）");
+-                    }
+-                });
+-            }
+-        });
+-        sourceAdapter.setOnItemLongClickListener((adapter, view, position) -> {
+-            // 长按链接 = 刷新该链接整棵资源树
+-            String url = sourceAdapter.getItem(position);
+-            selectPushSource(url, tvWarehouseTip);
+-            return true;
+-        });
+-
+-        warehouseAdapter.setCurrentApi(Hawk.get(HawkConfig.API_URL, ""));
+-        warehouseAdapter.setOnItemClickListener((adapter, view, position) -> {
+-            WarehouseBean bean = warehouseAdapter.getItem(position);
+-            if (bean != null) {
+-                applyWarehouse(bean);
+-            }
+-        });
+-        warehouseAdapter.setOnItemChildClickListener((adapter, view, position) -> {
+-            if (view.getId() == R.id.ivDelete) {
+-                WarehouseBean bean = warehouseAdapter.getItem(position);
+-                confirmDelete("删除该仓接口？", () -> {
+-                    if (bean != null) {
+-                        WarehouseRepo.addWarehouseBlacklist(bean.sourceUrl);
+-                        warehouseAdapter.remove(position);
+-                        Toast.makeText(getContext(), "已删除", Toast.LENGTH_SHORT).show();
+-                    }
+-                });
+-            }
+-        });
+-
+-        btnAddSource.setOnClickListener(v -> showAddSourceDialog(tvWarehouseTip));
+-        btnRefreshTree.setOnClickListener(v -> {
+-            if (selectedSource == null) {
+-                Toast.makeText(getContext(), "请先选择推送链接", Toast.LENGTH_SHORT).show();
+-                return;
+-            }
+-            fetchWarehouses(selectedSource, tvWarehouseTip);
+-        });
+-        ivClose.setOnClickListener(v -> dismiss());
+-
+-        // 扫码远程推送二维码（保留原能力）
+-        String address = ControlManager.get().getAddress(false);
+-        tvAddress.setText(String.format("手机扫码或浏览器访问 %s 推送配置", address));
+-        ivQRCode.setImageBitmap(QRCodeGen.generateBitmap(address + "api.html",
+-                AutoSizeUtils.mm2px(getContext(), 120), AutoSizeUtils.mm2px(getContext(), 120)));
+-
+-        refreshSourceList();
+-    }
+-
+-    private void refreshSourceList() {
+-        sourceAdapter.setNewData(new java.util.ArrayList<>(WarehouseRepo.getPushSources()));
+-        sourceAdapter.setSelectedUrl(selectedSource);
+-    }
+-
+-    private void selectPushSource(String url, TextView tipView) {
+-        if (TextUtils.isEmpty(url)) {
+-            return;
+-        }
+-        selectedSource = url;
+-        sourceAdapter.setSelectedUrl(url);
+-        if (!WarehouseRepo.getPushSources().contains(url)) {
+-            WarehouseRepo.addPushSource(url);
+-            sourceAdapter.setNewData(new java.util.ArrayList<>(WarehouseRepo.getPushSources()));
+-        }
+-        fetchWarehouses(url, tipView);
+-    }
+-
+-    /** 重拉该推送链接下的整棵资源树。 */
+-    private void fetchWarehouses(String url, TextView tipView) {
+-        tipView.setText("正在拉取资源树…");
+-        WarehouseRepo.fetchStoreHouse(url, new WarehouseRepo.WarehouseCallback() {
+-            @Override
+-            public void onSuccess(java.util.List<WarehouseBean> list) {
+-                if (getOwnerActivity() == null && !isShowing()) {
+-                    return;
+-                }
+-                warehouseAdapter.setNewData(list);
+-                tipView.setText("接口列表（" + list.size() + " 个仓）");
+-            }
+-
+-            @Override
+-            public void onError(String msg) {
+-                warehouseAdapter.setNewData(new java.util.ArrayList<>());
+-                tipView.setText(msg);
+-                Toast.makeText(getContext(), msg, Toast.LENGTH_SHORT).show();
+-            }
+-        });
+-    }
+-
+-    private void applyWarehouse(WarehouseBean bean) {
+-        String oldApi = Hawk.get(HawkConfig.API_URL, "");
+-        if (bean.sourceUrl.equals(oldApi)) {
+-            dismiss();
+-            return;
+-        }
+-        new TipDialog(getContext(), "切换到「" + bean.sourceName + "」并重载配置？", "取消", "确定",
+-                new TipDialog.OnListener() {
+-                    @Override
+-                    public void left() {
+-                    }
+-
+-                    @Override
+-                    public void right() {
+-                        SourceViewModel.clearRuntimeCache();
+-                        Hawk.put(HawkConfig.API_URL, bean.sourceUrl);
+-                        HistoryHelper.setApiHistory(bean.sourceUrl);
+-                        dismiss();
+-                        // 整套配置重载：重建 HomeActivity（useCache=false 全量 loadConfig）
+-                        Intent intent = new Intent(getContext(), HomeActivity.class);
+-                        intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
+-                        getContext().startActivity(intent);
+-                    }
+-
+-                    @Override
+-                    public void cancel() {
+-                    }
+-                }).show();
+-    }
+-
+-    private void showAddSourceDialog(TextView tipView) {
+-        final EditText input = new EditText(getContext());
+-        input.setHint("输入多仓/接口链接");
+-        input.setSingleLine(true);
+-        FrameLayout container = new FrameLayout(getContext());
+-        int pad = AutoSizeUtils.mm2px(getContext(), 20);
+-        container.setPadding(pad, pad / 2, pad, 0);
+-        container.addView(input, new FrameLayout.LayoutParams(
+-                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT));
+-        new androidx.appcompat.app.AlertDialog.Builder(getContext())
+-                .setTitle("添加推送链接")
+-                .setView(container)
+-                .setPositiveButton("确定", (dialog, which) -> {
+-                    String url = input.getText().toString().trim();
+-                    if (TextUtils.isEmpty(url)) {
+-                        return;
+-                    }
+-                    WarehouseRepo.addPushSource(url);
+-                    refreshSourceList();
+-                    selectPushSource(url, tipView);
+-                })
+-                .setNegativeButton("取消", null)
+-                .show();
+-    }
+-
+-    private void confirmDelete(String tip, Runnable action) {
+-        new TipDialog(getContext(), tip, "取消", "删除", new TipDialog.OnListener() {
+-            @Override
+-            public void left() {
+-            }
+-
+-            @Override
+-            public void right() {
+-                action.run();
+-            }
+-
+-            @Override
+-            public void cancel() {
+-            }
+-        }).show();
+-    }
+-}
+diff --git a/app/src/main/java/com/github/tvbox/osc/util/HawkConfig.java b/app/src/main/java/com/github/tvbox/osc/util/HawkConfig.java
+index 951b8df..b5cf585 100644
+--- a/app/src/main/java/com/github/tvbox/osc/util/HawkConfig.java
++++ b/app/src/main/java/com/github/tvbox/osc/util/HawkConfig.java
+@@ -59,14 +59,14 @@ public class HawkConfig {
+     public static final String LIVE_WEB_HEADER = "live_web_header";
+     public static final String DEFAULT_LOAD_LIVE = "DEFAULT_LOAD_LIVE";
+     public static final String SEARCH_HISTORY = "search_history";
+     public static final String DANMU_OPEN = "danmu_open";
+     public static final String DANMU_MAX_LINE = "danmu_max_line";
+     public static final String DANMU_SPEED = "danmu_speed";
+     public static final String DANMU_ALPHA = "danmu_alpha";
+     public static final String DANMU_SIZE_SCALE = "danmu_size_scale";
+     public static final String DANMU_RANDOM_COLOR = "danmu_random_color";
+     public static final String DANMU_API = "danmu_api";
+-    public static final String PUSH_SOURCE_LIST = "push_source_list"; // 多仓推送链接列表
+-    public static final String WAREHOUSE_BLACKLIST = "warehouse_blacklist"; // 已删除仓条目黑名单
++    public static final String CONFIG_LIST = "config_list"; // 配置弹窗推送配置列表 [{name,url}]
++    public static final String CONFIG_ACTIVE = "config_active"; // 当前生效线路 url（弹窗✓回显）
+     public static boolean hotVodDelete;
+ }
+diff --git a/app/src/main/res/layout/activity_home.xml b/app/src/main/res/layout/activity_home.xml
+index d8d0055..2174e02 100644
+--- a/app/src/main/res/layout/activity_home.xml
++++ b/app/src/main/res/layout/activity_home.xml
+@@ -105,21 +105,21 @@
+         <TextView
+             android:id="@+id/navPush"
+             android:layout_width="wrap_content"
+             android:layout_height="match_parent"
+             android:layout_marginLeft="@dimen/vs_20"
+             android:background="@drawable/shape_nav_text_focus"
+             android:focusable="true"
+             android:gravity="center"
+             android:paddingLeft="@dimen/vs_10"
+             android:paddingRight="@dimen/vs_10"
+-            android:text="推送"
++            android:text="配置"
+             android:textColor="@color/nav_text_color"
+             android:textSize="@dimen/ts_26" />
+ 
+         <TextView
+             android:id="@+id/navSetting"
+             android:layout_width="wrap_content"
+             android:layout_height="match_parent"
+             android:layout_marginLeft="@dimen/vs_20"
+             android:background="@drawable/shape_nav_text_focus"
+             android:focusable="true"
+diff --git a/app/src/main/res/layout/dialog_config.xml b/app/src/main/res/layout/dialog_config.xml
+new file mode 100644
+index 0000000..de18cf9
+--- /dev/null
++++ b/app/src/main/res/layout/dialog_config.xml
+@@ -0,0 +1,120 @@
++<?xml version="1.0" encoding="utf-8"?>
++<!-- 配置弹窗：标题+面包屑/扫码推送/关闭，中部三级配置列表，底部手动添加输入行 -->
++<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
++    android:layout_width="@dimen/vs_960"
++    android:layout_height="@dimen/vs_480"
++    android:background="@drawable/shape_danmu_setting_bg"
++    android:orientation="vertical">
++
++    <RelativeLayout
++        android:layout_width="match_parent"
++        android:layout_height="@dimen/vs_50"
++        android:paddingLeft="@dimen/vs_30"
++        android:paddingRight="@dimen/vs_30">
++
++        <TextView
++            android:id="@+id/tvTitle"
++            android:layout_width="wrap_content"
++            android:layout_height="match_parent"
++            android:gravity="center"
++            android:text="配置"
++            android:textColor="@color/atv_text_primary"
++            android:textSize="@dimen/ts_26" />
++
++        <TextView
++            android:id="@+id/tvBreadcrumb"
++            android:layout_width="wrap_content"
++            android:layout_height="match_parent"
++            android:layout_marginLeft="@dimen/vs_20"
++            android:layout_toRightOf="@id/tvTitle"
++            android:gravity="center"
++            android:textColor="@color/atv_text_secondary"
++            android:textSize="@dimen/ts_20" />
++
++        <TextView
++            android:id="@+id/btnScan"
++            android:layout_width="wrap_content"
++            android:layout_height="match_parent"
++            android:layout_toLeftOf="@id/ivClose"
++            android:focusable="true"
++            android:gravity="center"
++            android:paddingLeft="@dimen/vs_20"
++            android:paddingRight="@dimen/vs_20"
++            android:text="扫码推送"
++            android:textColor="@color/atv_text_secondary"
++            android:textSize="@dimen/ts_22" />
++
++        <ImageView
++            android:id="@+id/ivClose"
++            android:layout_width="@dimen/vs_40"
++            android:layout_height="match_parent"
++            android:layout_alignParentRight="true"
++            android:layout_centerVertical="true"
++            android:focusable="true"
++            android:src="@drawable/icon_delete" />
++    </RelativeLayout>
++
++    <TextView
++        android:id="@+id/tvTip"
++        android:layout_width="match_parent"
++        android:layout_height="wrap_content"
++        android:paddingLeft="@dimen/vs_30"
++        android:text=""
++        android:textColor="@color/atv_text_secondary"
++        android:textSize="@dimen/ts_20" />
++
++    <com.owen.tvrecyclerview.widget.TvRecyclerView
++        android:id="@+id/rvConfig"
++        android:layout_width="match_parent"
++        android:layout_height="0dp"
++        android:layout_weight="1"
++        android:paddingLeft="@dimen/vs_30"
++        android:paddingRight="@dimen/vs_30" />
++
++    <LinearLayout
++        android:layout_width="match_parent"
++        android:layout_height="@dimen/vs_60"
++        android:orientation="horizontal"
++        android:paddingLeft="@dimen/vs_30"
++        android:paddingRight="@dimen/vs_30">
++
++        <EditText
++            android:id="@+id/etName"
++            android:layout_width="0dp"
++            android:layout_height="match_parent"
++            android:layout_weight="1"
++            android:background="@drawable/input_dialog_api_input"
++            android:hint="输入名字（可空）"
++            android:paddingLeft="@dimen/vs_10"
++            android:singleLine="true"
++            android:textColor="@color/atv_text_primary"
++            android:textColorHint="@color/atv_text_secondary"
++            android:textSize="@dimen/ts_22" />
++
++        <EditText
++            android:id="@+id/etUrl"
++            android:layout_width="0dp"
++            android:layout_height="match_parent"
++            android:layout_marginLeft="@dimen/vs_20"
++            android:layout_weight="2.2"
++            android:background="@drawable/input_dialog_api_input"
++            android:hint="输入配置链接"
++            android:paddingLeft="@dimen/vs_10"
++            android:singleLine="true"
++            android:textColor="@color/atv_text_primary"
++            android:textColorHint="@color/atv_text_secondary"
++            android:textSize="@dimen/ts_22" />
++
++        <TextView
++            android:id="@+id/btnConfirm"
++            android:layout_width="@dimen/vs_90"
++            android:layout_height="match_parent"
++            android:layout_marginLeft="@dimen/vs_20"
++            android:background="@drawable/button_dialog_main"
++            android:focusable="true"
++            android:gravity="center"
++            android:text="确定"
++            android:textColor="@color/atv_text_primary"
++            android:textSize="@dimen/ts_24" />
++    </LinearLayout>
++</LinearLayout>
+diff --git a/app/src/main/res/layout/dialog_warehouse.xml b/app/src/main/res/layout/dialog_warehouse.xml
+deleted file mode 100644
+index a77e3b2..0000000
+--- a/app/src/main/res/layout/dialog_warehouse.xml
++++ /dev/null
+@@ -1,172 +0,0 @@
+-<?xml version="1.0" encoding="utf-8"?>
+-<!-- 多仓推送对话框：左=推送链接列表（可刷新重拉），右=当前链接下多仓接口列表；顶部保留扫码推送 -->
+-<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+-    xmlns:app="http://schemas.android.com/apk/res-auto"
+-    android:layout_width="match_parent"
+-    android:layout_height="wrap_content"
+-    android:layout_marginLeft="@dimen/vs_50"
+-    android:layout_marginTop="@dimen/vs_20"
+-    android:layout_marginRight="@dimen/vs_50"
+-    android:layout_marginBottom="@dimen/vs_20">
+-
+-    <LinearLayout
+-        android:layout_width="match_parent"
+-        android:layout_height="wrap_content"
+-        android:background="@drawable/shape_danmu_setting_bg"
+-        android:orientation="vertical"
+-        android:paddingLeft="@dimen/vs_20"
+-        android:paddingTop="@dimen/vs_15"
+-        android:paddingRight="@dimen/vs_20"
+-        android:paddingBottom="@dimen/vs_15">
+-
+-        <LinearLayout
+-            android:layout_width="match_parent"
+-            android:layout_height="wrap_content"
+-            android:gravity="center_vertical"
+-            android:orientation="horizontal">
+-
+-            <TextView
+-                android:layout_width="@dimen/vs_0"
+-                android:layout_height="wrap_content"
+-                android:layout_weight="1"
+-                android:text="多仓配置"
+-                android:textColor="@color/atv_text_primary"
+-                android:textSize="@dimen/ts_28"
+-                android:textStyle="bold" />
+-
+-            <ImageView
+-                android:id="@+id/ivClose"
+-                android:layout_width="@dimen/vs_35"
+-                android:layout_height="@dimen/vs_35"
+-                android:focusable="true"
+-                android:src="@drawable/icon_delete" />
+-        </LinearLayout>
+-
+-        <LinearLayout
+-            android:layout_width="match_parent"
+-            android:layout_height="wrap_content"
+-            android:layout_marginTop="@dimen/vs_10"
+-            android:orientation="horizontal">
+-
+-            <!-- 左栏：推送链接列表 -->
+-            <LinearLayout
+-                android:layout_width="@dimen/vs_0"
+-                android:layout_height="wrap_content"
+-                android:layout_weight="1"
+-                android:orientation="vertical">
+-
+-                <TextView
+-                    android:layout_width="wrap_content"
+-                    android:layout_height="wrap_content"
+-                    android:text="推送链接"
+-                    android:textColor="@color/atv_text_secondary"
+-                    android:textSize="@dimen/ts_22" />
+-
+-                <LinearLayout
+-                    android:layout_width="match_parent"
+-                    android:layout_height="wrap_content"
+-                    android:layout_marginTop="@dimen/vs_6"
+-                    android:orientation="horizontal">
+-
+-                    <TextView
+-                        android:id="@+id/btnAddSource"
+-                        android:layout_width="wrap_content"
+-                        android:layout_height="@dimen/vs_40"
+-                        android:background="@drawable/button_detail_sort"
+-                        android:focusable="true"
+-                        android:gravity="center"
+-                        android:paddingLeft="@dimen/vs_14"
+-                        android:paddingRight="@dimen/vs_14"
+-                        android:text="添加链接"
+-                        android:textColor="@android:color/white"
+-                        android:textSize="@dimen/ts_20" />
+-
+-                    <TextView
+-                        android:id="@+id/btnRefreshTree"
+-                        android:layout_width="wrap_content"
+-                        android:layout_height="@dimen/vs_40"
+-                        android:layout_marginLeft="@dimen/vs_10"
+-                        android:background="@drawable/button_detail_sort"
+-                        android:focusable="true"
+-                        android:gravity="center"
+-                        android:paddingLeft="@dimen/vs_14"
+-                        android:paddingRight="@dimen/vs_14"
+-                        android:text="刷新资源树"
+-                        android:textColor="@android:color/white"
+-                        android:textSize="@dimen/ts_20" />
+-                </LinearLayout>
+-
+-                <com.owen.tvrecyclerview.widget.TvRecyclerView
+-                    android:id="@+id/rvPushSources"
+-                    android:layout_width="match_parent"
+-                    android:layout_height="@dimen/vs_280"
+-                    android:layout_marginTop="@dimen/vs_10"
+-                    android:clipChildren="false"
+-                    android:clipToPadding="false"
+-                    app:tv_horizontalSpacingWithMargins="@dimen/vs_6"
+-                    app:tv_selectedItemIsCentered="true"
+-                    app:tv_verticalSpacingWithMargins="@dimen/vs_6" />
+-            </LinearLayout>
+-
+-            <View
+-                android:layout_width="@dimen/vs_1"
+-                android:layout_height="match_parent"
+-                android:layout_marginLeft="@dimen/vs_15"
+-                android:layout_marginRight="@dimen/vs_15"
+-                android:background="@color/atv_card_stroke" />
+-
+-            <!-- 右栏：多仓接口列表 + 扫码推送 -->
+-            <LinearLayout
+-                android:layout_width="@dimen/vs_0"
+-                android:layout_height="wrap_content"
+-                android:layout_weight="1"
+-                android:orientation="vertical">
+-
+-                <TextView
+-                    android:id="@+id/tvWarehouseTip"
+-                    android:layout_width="match_parent"
+-                    android:layout_height="wrap_content"
+-                    android:ellipsize="end"
+-                    android:singleLine="true"
+-                    android:text="接口列表（仓 > 接口 > 站源）"
+-                    android:textColor="@color/atv_text_secondary"
+-                    android:textSize="@dimen/ts_22" />
+-
+-                <com.owen.tvrecyclerview.widget.TvRecyclerView
+-                    android:id="@+id/rvWarehouses"
+-                    android:layout_width="match_parent"
+-                    android:layout_height="@dimen/vs_280"
+-                    android:layout_marginTop="@dimen/vs_10"
+-                    android:clipChildren="false"
+-                    android:clipToPadding="false"
+-                    app:tv_horizontalSpacingWithMargins="@dimen/vs_6"
+-                    app:tv_selectedItemIsCentered="true"
+-                    app:tv_verticalSpacingWithMargins="@dimen/vs_6" />
+-
+-                <LinearLayout
+-                    android:layout_width="match_parent"
+-                    android:layout_height="wrap_content"
+-                    android:layout_marginTop="@dimen/vs_10"
+-                    android:gravity="center_vertical"
+-                    android:orientation="horizontal">
+-
+-                    <ImageView
+-                        android:id="@+id/ivQRCode"
+-                        android:layout_width="@dimen/vs_80"
+-                        android:layout_height="@dimen/vs_80"
+-                        android:scaleType="fitCenter" />
+-
+-                    <TextView
+-                        android:id="@+id/tvAddress"
+-                        android:layout_width="match_parent"
+-                        android:layout_height="wrap_content"
+-                        android:layout_marginLeft="@dimen/vs_10"
+-                        android:ellipsize="end"
+-                        android:maxLines="3"
+-                        android:textColor="@color/atv_text_tertiary"
+-                        android:textSize="@dimen/ts_16" />
+-                </LinearLayout>
+-            </LinearLayout>
+-        </LinearLayout>
+-    </LinearLayout>
+-</FrameLayout>
+diff --git a/app/src/main/res/layout/item_config_row.xml b/app/src/main/res/layout/item_config_row.xml
+new file mode 100644
+index 0000000..66e5366
+--- /dev/null
++++ b/app/src/main/res/layout/item_config_row.xml
+@@ -0,0 +1,44 @@
++<?xml version="1.0" encoding="utf-8"?>
++<!-- 配置弹窗条目：名称 + 生效✓ + 删除；tvName 锚定 ivSelected 左侧避免与✓重叠；
++     行根布局用 button_dialog_vod 两态背景（聚焦半透明高亮/常态透明）提供 TV 焦点视觉 -->
++<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
++    android:layout_width="match_parent"
++    android:layout_height="@dimen/vs_50"
++    android:layout_marginTop="@dimen/vs_10"
++    android:background="@drawable/button_dialog_vod"
++    android:focusable="true">
++
++    <TextView
++        android:id="@+id/tvName"
++        android:layout_width="match_parent"
++        android:layout_height="match_parent"
++        android:layout_toLeftOf="@id/ivSelected"
++        android:ellipsize="end"
++        android:gravity="center_vertical"
++        android:paddingLeft="@dimen/vs_20"
++        android:singleLine="true"
++        android:textColor="@color/atv_text_primary"
++        android:textSize="@dimen/ts_24" />
++
++    <TextView
++        android:id="@+id/ivSelected"
++        android:layout_width="wrap_content"
++        android:layout_height="match_parent"
++        android:layout_marginRight="@dimen/vs_10"
++        android:layout_toLeftOf="@id/ivDelete"
++        android:gravity="center"
++        android:text="✓"
++        android:textColor="@color/atv_accent"
++        android:textSize="@dimen/ts_24"
++        android:visibility="gone" />
++
++    <ImageView
++        android:id="@+id/ivDelete"
++        android:layout_width="@dimen/vs_40"
++        android:layout_height="match_parent"
++        android:layout_alignParentRight="true"
++        android:layout_centerVertical="true"
++        android:focusable="true"
++        android:padding="@dimen/vs_10"
++        android:src="@drawable/icon_delete" />
++</RelativeLayout>
+diff --git a/app/src/main/res/layout/item_push_source.xml b/app/src/main/res/layout/item_push_source.xml
+deleted file mode 100644
+index 3be9a00..0000000
+--- a/app/src/main/res/layout/item_push_source.xml
++++ /dev/null
+@@ -1,31 +0,0 @@
+-<?xml version="1.0" encoding="utf-8"?>
+-<!-- 多仓对话框左栏条目：推送链接（选中高亮）+ 删除 -->
+-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+-    android:layout_width="match_parent"
+-    android:layout_height="wrap_content"
+-    android:focusable="true"
+-    android:gravity="center_vertical"
+-    android:orientation="horizontal"
+-    android:paddingLeft="@dimen/vs_10"
+-    android:paddingRight="@dimen/vs_10"
+-    android:paddingTop="@dimen/vs_8"
+-    android:paddingBottom="@dimen/vs_8">
+-
+-    <TextView
+-        android:id="@+id/tvSourceUrl"
+-        android:layout_width="@dimen/vs_0"
+-        android:layout_height="wrap_content"
+-        android:layout_weight="1"
+-        android:ellipsize="middle"
+-        android:singleLine="true"
+-        android:textColor="@color/atv_text_secondary"
+-        android:textSize="@dimen/ts_20" />
+-
+-    <ImageView
+-        android:id="@+id/ivDelete"
+-        android:layout_width="@dimen/vs_30"
+-        android:layout_height="@dimen/vs_30"
+-        android:layout_marginLeft="@dimen/vs_6"
+-        android:focusable="true"
+-        android:src="@drawable/icon_delete" />
+-</LinearLayout>
+diff --git a/app/src/main/res/layout/item_warehouse.xml b/app/src/main/res/layout/item_warehouse.xml
+deleted file mode 100644
+index 4ee2ed7..0000000
+--- a/app/src/main/res/layout/item_warehouse.xml
++++ /dev/null
+@@ -1,57 +0,0 @@
+-<?xml version="1.0" encoding="utf-8"?>
+-<!-- 多仓对话框右栏条目：仓名 + 配置链接 + 当前接口标记 + 删除 -->
+-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+-    android:layout_width="match_parent"
+-    android:layout_height="wrap_content"
+-    android:focusable="true"
+-    android:gravity="center_vertical"
+-    android:orientation="horizontal"
+-    android:paddingLeft="@dimen/vs_10"
+-    android:paddingRight="@dimen/vs_10"
+-    android:paddingTop="@dimen/vs_8"
+-    android:paddingBottom="@dimen/vs_8">
+-
+-    <LinearLayout
+-        android:layout_width="@dimen/vs_0"
+-        android:layout_height="wrap_content"
+-        android:layout_weight="1"
+-        android:orientation="vertical">
+-
+-        <TextView
+-            android:id="@+id/tvWarehouseName"
+-            android:layout_width="match_parent"
+-            android:layout_height="wrap_content"
+-            android:ellipsize="end"
+-            android:singleLine="true"
+-            android:textColor="@color/atv_text_primary"
+-            android:textSize="@dimen/ts_22" />
+-
+-        <TextView
+-            android:id="@+id/tvWarehouseUrl"
+-            android:layout_width="match_parent"
+-            android:layout_height="wrap_content"
+-            android:layout_marginTop="@dimen/vs_2"
+-            android:ellipsize="middle"
+-            android:singleLine="true"
+-            android:textColor="@color/atv_text_tertiary"
+-            android:textSize="@dimen/ts_16" />
+-    </LinearLayout>
+-
+-    <TextView
+-        android:id="@+id/tvCurrentMark"
+-        android:layout_width="wrap_content"
+-        android:layout_height="wrap_content"
+-        android:layout_marginLeft="@dimen/vs_6"
+-        android:text="当前"
+-        android:textColor="@color/atv_accent"
+-        android:textSize="@dimen/ts_18"
+-        android:visibility="gone" />
+-
+-    <ImageView
+-        android:id="@+id/ivDelete"
+-        android:layout_width="@dimen/vs_30"
+-        android:layout_height="@dimen/vs_30"
+-        android:layout_marginLeft="@dimen/vs_6"
+-        android:focusable="true"
+-        android:src="@drawable/icon_delete" />
+-</LinearLayout>

@@ -36,10 +36,7 @@
     <!-- Hero 轮播（贴顶铺满） -->
     <dimen name="atv_hero_h">300mm</dimen>
 
-    <!-- Hero 信息块距屏顶（从顶部锚定：与 tab 行 300mm 同基准，任何屏比都恒在其上方） -->
-    <dimen name="atv_hero_info_top">155mm</dimen>
-
-    <!-- 顶部悬浮导航栏高 -->
+    <!-- 顶部悬浮导航栏高：初始占位，代码按导航字号动态覆盖（HeroInfoLayout/HomeActivity） -->
     <dimen name="atv_nav_h">30mm</dimen>
 
     <!-- 左半屏导航宽：5 槽 528 → 7 槽（+短剧/音乐）580，上限=屏宽/2-安全边距，不侵入系统状态栏区 -->

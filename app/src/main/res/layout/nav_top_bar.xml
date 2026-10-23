@@ -1,0 +1,135 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 顶部悬浮导航栏（HomeActivity 点播主页 / DramaHomeFragment 短剧主页共用，include 引入）。
+     home 图标（=设置的主页）+ 点播/直播/短剧/音乐/搜索/配置/设置，
+     主页对应项由代码隐藏，始终 7 槽可见、weight 等分 → 间距一致；
+     home 图标同样槽内居中（fitCenter）——fitStart 会让图标贴左缘，与居中的文字 tab
+     视觉间距不均（Home 与右邻 tab 隔半个槽位显得过宽）。
+     焦点态与底部分类 tab 一致：透明底 + 文字变白（button_home_sort_focus/tab_text_color）。
+     高度由代码按字号动态设置（字高 em × 1.4），atv_nav_h 仅为初始占位值。 -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/topLayout"
+    android:layout_width="match_parent"
+    android:layout_height="@dimen/atv_nav_h"
+    android:background="@drawable/shape_top_nav_scrim"
+    android:paddingLeft="@dimen/atv_safe_side"
+    android:paddingRight="@dimen/atv_safe_side">
+
+    <!-- 导航均分区：weight 等分 -->
+    <LinearLayout
+        android:layout_width="@dimen/atv_nav_left_w"
+        android:layout_height="match_parent"
+        android:orientation="horizontal">
+
+        <ImageView
+            android:id="@+id/navHome"
+            android:layout_width="@dimen/vs_0"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:background="@drawable/button_home_sort_focus"
+            android:contentDescription="首页"
+            android:focusable="true"
+            android:scaleType="fitCenter"
+            android:src="@drawable/icon_home" />
+
+        <TextView
+            android:id="@+id/tvName"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="0"
+            android:ellipsize="end"
+            android:focusable="false"
+            android:gravity="left|center_vertical"
+            android:maxWidth="@dimen/vs_240"
+            android:maxLines="1"
+            android:text="@string/app_name"
+            android:textAlignment="gravity"
+            android:textColor="@color/atv_text_secondary"
+            android:textSize="@dimen/ts_26"
+            android:textStyle="bold"
+            android:visibility="gone" />
+
+        <TextView
+            android:id="@+id/navVod"
+            android:layout_width="@dimen/vs_0"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:background="@drawable/button_home_sort_focus"
+            android:focusable="true"
+            android:gravity="center"
+            android:text="点播"
+            android:textColor="@color/nav_text_color"
+            android:textSize="@dimen/ts_nav" />
+
+        <TextView
+            android:id="@+id/navLive"
+            android:layout_width="@dimen/vs_0"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:background="@drawable/button_home_sort_focus"
+            android:focusable="true"
+            android:gravity="center"
+            android:text="直播"
+            android:textColor="@color/tab_text_color"
+            android:textSize="@dimen/ts_nav" />
+
+        <TextView
+            android:id="@+id/navDrama"
+            android:layout_width="@dimen/vs_0"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:background="@drawable/button_home_sort_focus"
+            android:focusable="true"
+            android:gravity="center"
+            android:text="短剧"
+            android:textColor="@color/nav_text_color"
+            android:textSize="@dimen/ts_nav" />
+
+        <TextView
+            android:id="@+id/navMusic"
+            android:layout_width="@dimen/vs_0"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:background="@drawable/button_home_sort_focus"
+            android:focusable="true"
+            android:gravity="center"
+            android:text="音乐"
+            android:textColor="@color/tab_text_color"
+            android:textSize="@dimen/ts_nav" />
+
+        <TextView
+            android:id="@+id/navSearch"
+            android:layout_width="@dimen/vs_0"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:background="@drawable/button_home_sort_focus"
+            android:focusable="true"
+            android:gravity="center"
+            android:text="搜索"
+            android:textColor="@color/tab_text_color"
+            android:textSize="@dimen/ts_nav" />
+
+        <TextView
+            android:id="@+id/navPush"
+            android:layout_width="@dimen/vs_0"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:background="@drawable/button_home_sort_focus"
+            android:focusable="true"
+            android:gravity="center"
+            android:text="配置"
+            android:textColor="@color/tab_text_color"
+            android:textSize="@dimen/ts_nav" />
+
+        <TextView
+            android:id="@+id/navSetting"
+            android:layout_width="@dimen/vs_0"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:background="@drawable/button_home_sort_focus"
+            android:focusable="true"
+            android:gravity="center"
+            android:text="设置"
+            android:textColor="@color/tab_text_color"
+            android:textSize="@dimen/ts_nav" />
+    </LinearLayout>
+</FrameLayout>

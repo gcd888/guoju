@@ -162,7 +162,7 @@
         </LinearLayout>
     </LinearLayout>
 
-    <com.github.tvbox.osc.subtitle.widget.SimpleSubtitleView
+    <com.github.gcd888.guoju.subtitle.widget.SimpleSubtitleView
         android:id="@+id/subtitle_view"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -183,7 +183,7 @@
         android:layout_height="match_parent"
         android:visibility="gone" />
 
-    <com.github.tvbox.osc.subtitle.widget.SimpleSubtitleView
+    <com.github.gcd888.guoju.subtitle.widget.SimpleSubtitleView
         android:id="@+id/lyric_view"
         android:layout_width="match_parent"
         android:layout_height="match_parent"

@@ -2,7 +2,7 @@
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@color/atv_bg"
+    android:background="@drawable/bg_page_wallpaper"
     android:orientation="horizontal">
 
     <LinearLayout
@@ -23,7 +23,7 @@
             android:layout_gravity="center" />
     </LinearLayout>
 
-    <com.github.tvbox.osc.ui.tv.widget.NoScrollViewPager
+    <com.github.gcd888.guoju.ui.tv.widget.NoScrollViewPager
         android:id="@+id/mViewPager"
         android:layout_width="match_parent"
         android:layout_height="match_parent" />

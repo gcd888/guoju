@@ -4,7 +4,7 @@ import android.content.Context;
 import android.text.TextUtils;
 import android.util.Base64;
 
-import com.github.tvbox.osc.base.App;
+import com.github.gcd888.guoju.base.App;
 
 import java.io.ByteArrayOutputStream;
 import java.io.Closeable;

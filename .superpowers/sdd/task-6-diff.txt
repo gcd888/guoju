@@ -1,0 +1,921 @@
+﻿commit b6230c16792c0176ff20de17fa33028930aeec51
+Author: gcd888 <873221014@qq.com>
+Date:   Sun Oct 18 19:04:17 2026 +0800
+
+    feat: 配置弹窗改三列三层联动+三列勾选态，版本 0.0.1.30
+    
+    Co-Authored-By: Claude Sonnet 4.6 noreply@anthropic.com
+
+ app/build.gradle                                   |   2 +-
+ .../github/tvbox/osc/ui/adapter/ConfigAdapter.java |  21 +-
+ .../github/tvbox/osc/ui/dialog/ConfigDialog.java   | 439 ++++++++++++---------
+ .../res/drawable/shape_config_row_selected.xml     |  18 +
+ app/src/main/res/layout/dialog_config.xml          |  98 ++++-
+ app/src/main/res/layout/item_config_row.xml        |   3 +-
+ 6 files changed, 383 insertions(+), 198 deletions(-)
+commit b6230c16792c0176ff20de17fa33028930aeec51
+Author: gcd888 <873221014@qq.com>
+Date:   Sun Oct 18 19:04:17 2026 +0800
+
+    feat: 配置弹窗改三列三层联动+三列勾选态，版本 0.0.1.30
+    
+    Co-Authored-By: Claude Sonnet 4.6 noreply@anthropic.com
+
+diff --git a/app/build.gradle b/app/build.gradle
+index eb28182..f5feb50 100644
+--- a/app/build.gradle
++++ b/app/build.gradle
+@@ -1,20 +1,20 @@
+ apply plugin: 'com.android.application'
+ 
+ android {
+     compileSdkVersion 33
+ 
+     defaultConfig {
+         applicationId 'com.github.gcd888.guoju'
+         targetSdkVersion 28
+         versionCode 30
+-        versionName '0.0.1.29'
++        versionName '0.0.1.30'
+         multiDexEnabled true
+         //设置room的Schema的位置
+         javaCompileOptions {
+             annotationProcessorOptions {
+                 arguments = ["room.schemaLocation": "$projectDir/schemas".toString()]
+             }
+         }
+     }
+ 
+     packagingOptions {
+diff --git a/app/src/main/java/com/github/tvbox/osc/ui/adapter/ConfigAdapter.java b/app/src/main/java/com/github/tvbox/osc/ui/adapter/ConfigAdapter.java
+index 7e7605e..a58183d 100644
+--- a/app/src/main/java/com/github/tvbox/osc/ui/adapter/ConfigAdapter.java
++++ b/app/src/main/java/com/github/tvbox/osc/ui/adapter/ConfigAdapter.java
+@@ -4,36 +4,51 @@ import android.view.View;
+ import android.widget.TextView;
+ 
+ import com.chad.library.adapter.base.BaseQuickAdapter;
+ import com.chad.library.adapter.base.BaseViewHolder;
+ import com.github.tvbox.osc.R;
+ import com.github.tvbox.osc.bean.ConfigNodeBean;
+ 
+ import java.util.ArrayList;
+ 
+ /**
+- * 配置弹窗三级通用列表适配器（名称+删除按钮+生效✓）。
++ * 配置弹窗三列通用列表适配器（名称+删除按钮+生效✓+勾选态）。
++ * 勾选态用节点对象引用比对（虚拟节点与上级 url 相同，不可用 url 比对选中态）；
++ * 生效✓仍用 url 比对。
+  */
+ public class ConfigAdapter extends BaseQuickAdapter<ConfigNodeBean, BaseViewHolder> {
+ 
+     /** 当前生效的配置链接，用于标记"✓"。 */
+     private String currentUrl = "";
++    /** 勾选态节点（列内对象引用，列数据重建后由弹窗置空）。 */
++    private ConfigNodeBean selected;
+ 
+     public ConfigAdapter() {
+         super(R.layout.item_config_row, new ArrayList<>());
+     }
+ 
+     public void setCurrentUrl(String url) {
+         currentUrl = url == null ? "" : url;
+         notifyDataSetChanged();
+     }
+ 
++    /** 设置勾选态节点（传 null 清除），行背景切换为橙色描边选中样式。 */
++    public void setSelected(ConfigNodeBean node) {
++        selected = node;
++        notifyDataSetChanged();
++    }
++
+     @Override
+     protected void convert(BaseViewHolder helper, ConfigNodeBean item) {
+         TextView tvName = helper.getView(R.id.tvName);
+         TextView tvSelected = helper.getView(R.id.ivSelected);
+         tvName.setText(item.name);
+-        boolean selected = !currentUrl.isEmpty() && currentUrl.equals(item.url);
+-        tvSelected.setVisibility(selected ? View.VISIBLE : View.GONE);
++        // 勾选态：节点引用比对，覆盖默认两态背景为选中描边样式
++        helper.itemView.setBackgroundResource(item == selected
++                ? R.drawable.shape_config_row_selected
++                : R.drawable.button_dialog_vod);
++        // 生效✓：url 比对（真实生效链接，虚拟节点与上级同 url 时多处同时显示属预期）
++        boolean active = !currentUrl.isEmpty() && currentUrl.equals(item.url);
++        tvSelected.setVisibility(active ? View.VISIBLE : View.GONE);
+         helper.addOnClickListener(R.id.ivDelete);
+     }
+ }
+diff --git a/app/src/main/java/com/github/tvbox/osc/ui/dialog/ConfigDialog.java b/app/src/main/java/com/github/tvbox/osc/ui/dialog/ConfigDialog.java
+index df0bffc..ad9cd0c 100644
+--- a/app/src/main/java/com/github/tvbox/osc/ui/dialog/ConfigDialog.java
++++ b/app/src/main/java/com/github/tvbox/osc/ui/dialog/ConfigDialog.java
+@@ -3,285 +3,286 @@ package com.github.tvbox.osc.ui.dialog;
+ import android.content.Context;
+ import android.content.Intent;
+ import android.text.TextUtils;
+ import android.view.KeyEvent;
+ import android.widget.EditText;
+ import android.widget.TextView;
+ import android.widget.Toast;
+ 
+ import androidx.annotation.NonNull;
+ 
+-import com.chad.library.adapter.base.BaseQuickAdapter;
+ import com.github.tvbox.osc.R;
+ import com.github.tvbox.osc.api.ConfigRepo;
+ import com.github.tvbox.osc.bean.ConfigItem;
+ import com.github.tvbox.osc.bean.ConfigNodeBean;
+ import com.github.tvbox.osc.ui.activity.HomeActivity;
+ import com.github.tvbox.osc.ui.adapter.ConfigAdapter;
+ import com.github.tvbox.osc.util.HawkConfig;
+ import com.github.tvbox.osc.util.HistoryHelper;
+ import com.github.tvbox.osc.viewmodel.SourceViewModel;
+ import com.orhanobut.hawk.Hawk;
+ import com.owen.tvrecyclerview.widget.TvRecyclerView;
+ import com.owen.tvrecyclerview.widget.V7LinearLayoutManager;
+ 
+ import org.jetbrains.annotations.NotNull;
+ 
+ import java.util.ArrayList;
+ import java.util.List;
+ 
+ /**
+- * 配置弹窗：配置 > 仓库 > 线路 三级钻取。
+- * 每行删除按钮（配置级持久删、仓库/线路级会话删）；长按配置=刷新整棵资源树；
+- * 线路激活走 API_URL + clearRuntimeCache + 重启首页现有链路。
++ * 配置弹窗（Finder 三栏式）：左=配置 / 中=仓库 / 右=线路，三列联动列表。
++ * 点左列配置拉取判型填中/右列；点中列仓库拉取判型填右列；点右列线路为终端时直接激活，
++ * 套娃链接拉取后层级借用右列展示下级。勾选态用节点引用比对（虚拟节点与上级同 url）；
++ * 每行删除（配置持久删/仓库线路会话删）；长按配置=失效整棵缓存树重拉；返回键直接关闭。
+  */
+ public class ConfigDialog extends BaseDialog {
+ 
+-    private final ConfigAdapter adapter = new ConfigAdapter();
+-    /** 层级路径上下文：面包屑展示与返回回退 */
+-    private final List<String> breadcrumb = new ArrayList<>();
+-    /** 层栈：栈顶为当前展示层（0=配置/1=仓库/2=线路，层级由节点判型决定） */
+-    private final List<Level> stack = new ArrayList<>();
+-    private TextView tvBreadcrumb;
++    private final ConfigAdapter configAdapter = new ConfigAdapter();
++    private final ConfigAdapter warehouseAdapter = new ConfigAdapter();
++    private final ConfigAdapter lineAdapter = new ConfigAdapter();
++
++    /** 三列数据（三栏并列展示层级，无层级栈） */
++    private final List<ConfigNodeBean> configNodes = new ArrayList<>();
++    private final List<ConfigNodeBean> warehouseNodes = new ArrayList<>();
++    private final List<ConfigNodeBean> lineNodes = new ArrayList<>();
++
++    /** 三列勾选态（节点对象引用；列数据被替换时置空，不能用 url 比对——虚拟节点与上级同 url） */
++    private ConfigNodeBean selectedConfig;
++    private ConfigNodeBean selectedWarehouse;
++    private ConfigNodeBean selectedLine;
++
+     private TextView tvTip;
+     private EditText etName;
+     private EditText etUrl;
+ 
+-    private static class Level {
+-        List<ConfigNodeBean> nodes = new ArrayList<>();
+-        /** 本层压入时向面包屑添加的条数（虚拟补层为 2：本级名+虚拟仓库名），返回时同步回退 */
+-        int crumbs;
+-    }
+-
+     public ConfigDialog(@NonNull @NotNull Context context) {
+         super(context);
+         setContentView(R.layout.dialog_config);
+         setCanceledOnTouchOutside(false);
+ 
+-        tvBreadcrumb = findViewById(R.id.tvBreadcrumb);
+         tvTip = findViewById(R.id.tvTip);
+         etName = findViewById(R.id.etName);
+         etUrl = findViewById(R.id.etUrl);
+-        TvRecyclerView rvConfig = findViewById(R.id.rvConfig);
+-        rvConfig.setLayoutManager(new V7LinearLayoutManager(getContext(), V7LinearLayoutManager.VERTICAL, false));
+-        rvConfig.setAdapter(adapter);
+-
+-        adapter.setOnItemClickListener((a, view, position) -> onItemClicked(adapter.getItem(position)));
+-        adapter.setOnItemLongClickListener((a, view, position) -> onItemLongClicked(adapter.getItem(position)));
+-        adapter.setOnItemChildClickListener((a, view, position) -> {
+-            if (view.getId() == R.id.ivDelete) {
+-                onDeleteClicked(adapter.getItem(position));
+-            }
++
++        initColumn(findViewById(R.id.rvConfig), configAdapter);
++        initColumn(findViewById(R.id.rvWarehouse), warehouseAdapter);
++        initColumn(findViewById(R.id.rvLine), lineAdapter);
++
++        configAdapter.setOnItemClickListener((a, view, position) -> onConfigClicked(configAdapter.getItem(position)));
++        configAdapter.setOnItemLongClickListener((a, view, position) -> onConfigLongClicked(configAdapter.getItem(position)));
++        configAdapter.setOnItemChildClickListener((a, view, position) -> {
++            if (view.getId() == R.id.ivDelete) onDeleteConfig(configAdapter.getItem(position));
++        });
++        warehouseAdapter.setOnItemClickListener((a, view, position) -> onWarehouseClicked(warehouseAdapter.getItem(position)));
++        warehouseAdapter.setOnItemChildClickListener((a, view, position) -> {
++            if (view.getId() == R.id.ivDelete) onDeleteWarehouse(warehouseAdapter.getItem(position));
++        });
++        lineAdapter.setOnItemClickListener((a, view, position) -> onLineClicked(lineAdapter.getItem(position)));
++        lineAdapter.setOnItemChildClickListener((a, view, position) -> {
++            if (view.getId() == R.id.ivDelete) onDeleteLine(lineAdapter.getItem(position));
+         });
+ 
+         findViewById(R.id.ivClose).setOnClickListener(v -> dismiss());
+         findViewById(R.id.btnScan).setOnClickListener(v -> new RemoteDialog(getContext()).show());
+         findViewById(R.id.btnConfirm).setOnClickListener(v -> onConfirmClicked());
+ 
+         ConfigRepo.resetSession();
+-        Level root = new Level();
+-        root.nodes.addAll(buildConfigNodes());
+-        stack.add(root);
+-        refreshUi();
+-    }
+-
+-    // ---------------- 层级渲染 ----------------
+-
+-    private List<ConfigNodeBean> buildConfigNodes() {
+-        List<ConfigNodeBean> nodes = new ArrayList<>();
+         for (ConfigItem item : ConfigRepo.getConfigList()) {
+-            nodes.add(new ConfigNodeBean(item.name, item.url, ConfigNodeBean.TYPE_CONFIG, false));
++            configNodes.add(new ConfigNodeBean(item.name, item.url, ConfigNodeBean.TYPE_CONFIG, false));
+         }
+-        return nodes;
++        configAdapter.setNewData(configNodes);
++        // 生效✓三列各自比对展示（切换源/删除生效源均会关闭弹窗，无需动态刷新）
++        String activeUrl = ConfigRepo.getActiveUrl();
++        configAdapter.setCurrentUrl(activeUrl);
++        warehouseAdapter.setCurrentUrl(activeUrl);
++        lineAdapter.setCurrentUrl(activeUrl);
++        updateTip();
+     }
+ 
+-    /** 压入新层并记录其贡献的面包屑条数（crumb 传 null 跳过），保证返回回退同步。 */
+-    private void pushLevel(Level level, String... crumbs) {
+-        int added = 0;
+-        for (String crumb : crumbs) {
+-            if (crumb != null) {
+-                breadcrumb.add(crumb);
+-                added++;
+-            }
+-        }
+-        level.crumbs = added;
+-        stack.add(level);
+-        refreshUi();
++    /** 初始化单列列表（布局 + 适配器；点击/长按/删除由各列单独挂接）。 */
++    private void initColumn(TvRecyclerView rv, ConfigAdapter adapter) {
++        rv.setLayoutManager(new V7LinearLayoutManager(getContext(), V7LinearLayoutManager.VERTICAL, false));
++        rv.setAdapter(adapter);
+     }
+ 
+-    private void refreshUi() {
+-        Level top = stack.get(stack.size() - 1);
+-        adapter.setNewData(top.nodes);
+-        adapter.setCurrentUrl(ConfigRepo.getActiveUrl());
+-        tvBreadcrumb.setText(joinBreadcrumb());
+-        tvTip.setText(top.nodes.isEmpty() ? "暂无条目，在下方输入链接推送" : "共 " + top.nodes.size() + " 条");
+-    }
++    // ---------------- 三列勾选与状态 ----------------
+ 
+-    private String joinBreadcrumb() {
+-        StringBuilder sb = new StringBuilder();
+-        for (int i = 0; i < breadcrumb.size(); i++) {
+-            if (i > 0) sb.append(" > ");
+-            sb.append(breadcrumb.get(i));
+-        }
+-        return sb.toString();
+-    }
+-
+-    private void backLevel() {
+-        if (stack.size() <= 1) {
+-            dismiss();
++    /** 状态栏：三列条数概览；配置为空时提示推送入口。 */
++    private void updateTip() {
++        if (configNodes.isEmpty()) {
++            tvTip.setText("暂无配置，在下方输入链接推送");
+             return;
+         }
+-        Level top = stack.remove(stack.size() - 1);
+-        for (int i = 0; i < top.crumbs && !breadcrumb.isEmpty(); i++) {
+-            breadcrumb.remove(breadcrumb.size() - 1);
+-        }
+-        refreshUi();
++        tvTip.setText("配置 " + configNodes.size() + " · 仓库 " + warehouseNodes.size() + " · 线路 " + lineNodes.size());
+     }
+ 
+-    /** 回退到根（配置级）并清空面包屑，供长按刷新/删除/新增后重钻。 */
+-    private void popToRoot() {
+-        while (stack.size() > 1) {
+-            stack.remove(stack.size() - 1);
+-            if (!breadcrumb.isEmpty()) breadcrumb.remove(breadcrumb.size() - 1);
++    /** 按对象引用移除（url 相同的虚拟/真实节点不可用 equals 移除）。 */
++    private static boolean removeByRef(List<ConfigNodeBean> list, ConfigNodeBean node) {
++        for (int i = 0; i < list.size(); i++) {
++            if (list.get(i) == node) {
++                list.remove(i);
++                return true;
++            }
+         }
+-        breadcrumb.clear();
++        return false;
+     }
+ 
+-    /** 用最新持久配置列表原地重建根层（避免 showConfigLevel 重复压栈）。 */
+-    private void rebuildRootLevel() {
+-        popToRoot();
+-        Level root = stack.get(0);
+-        root.nodes.clear();
+-        root.nodes.addAll(buildConfigNodes());
+-        refreshUi();
++    // ---------------- 左列：配置 ----------------
++
++    /** 点左列配置：勾选 + 拉取判型填中/右列。 */
++    private void onConfigClicked(final ConfigNodeBean node) {
++        if (node == null) return;
++        selectedConfig = node;
++        configAdapter.setSelected(node);
++        fetchConfigIntoColumns(node);
+     }
+ 
+-    @Override
+-    public boolean onKeyDown(int keyCode, KeyEvent event) {
+-        if (keyCode == KeyEvent.KEYCODE_BACK) {
+-            backLevel();
+-            return true;
+-        }
+-        return super.onKeyDown(keyCode, event);
++    /** 长按左列配置：失效整棵缓存树（含恢复该树会话删除）并重新拉取填列。 */
++    private boolean onConfigLongClicked(ConfigNodeBean node) {
++        if (node == null) return true;
++        if (node.type != ConfigNodeBean.TYPE_CONFIG) return true; // 长按刷新仅配置级
++        ConfigRepo.invalidateTree(node.url);
++        fetchConfigIntoColumns(node);
++        return true;
+     }
+ 
+-    // ---------------- 条目行为 ----------------
++    /** 拉取配置并按判型填充中/右列（WAREHOUSE=仓列表 / LINE=虚拟仓库+真实线路 / TERMINAL=虚拟仓库+虚拟线路）。 */
++    private void fetchConfigIntoColumns(final ConfigNodeBean node) {
++        tvTip.setText("正在拉取…");
++        ConfigRepo.fetchNode(node.url, new ConfigRepo.NodeCallback() {
++            @Override
++            public void onSuccess(ConfigRepo.FetchResult result) {
++                if (!isShowing()) return;
++                fillColumnsByConfigType(result, node);
++            }
+ 
+-    private void onItemClicked(ConfigNodeBean node) {
+-        if (node == null) return;
+-        if (node.type == ConfigNodeBean.TYPE_TERMINAL) {
+-            applyLine(node); // 终端节点直接激活
++            @Override
++            public void onError(String msg) {
++                if (!isShowing()) return;
++                tvTip.setText(msg);
++                Toast.makeText(getContext(), msg, Toast.LENGTH_SHORT).show();
++            }
++        });
++    }
++
++    /** 配置判型结果填列：左列不动，中/右列整体重建，下游勾选态随之清空。 */
++    private void fillColumnsByConfigType(ConfigRepo.FetchResult result, ConfigNodeBean config) {
++        selectedWarehouse = null;
++        selectedLine = null;
++        warehouseAdapter.setSelected(null);
++        lineAdapter.setSelected(null);
++        warehouseNodes.clear();
++        lineNodes.clear();
++        if (result.type == ConfigNodeBean.TYPE_WAREHOUSE) {
++            // 中列=真实仓列表，右列清空
++            warehouseNodes.addAll(result.nodes);
+         } else {
+-            fetchAndEnter(node); // 配置/仓库/线路均拉取判型决定下一层
++            // LINE/TERMINAL 均缺仓库层：补单条虚拟仓库（url=配置 url，点它即重拉配置）
++            warehouseNodes.add(new ConfigNodeBean(ConfigRepo.genVirtualName("自定义仓库"),
++                    config.url, ConfigNodeBean.TYPE_WAREHOUSE, true));
++            if (result.type == ConfigNodeBean.TYPE_LINE) {
++                lineNodes.addAll(result.nodes); // 右列=真实线路列表
++            } else { // TERMINAL：右列单条虚拟线路（url=配置 url，可激活）
++                lineNodes.add(new ConfigNodeBean(ConfigRepo.genVirtualName("自定义线路"),
++                        config.url, ConfigNodeBean.TYPE_TERMINAL, true));
++            }
+         }
++        warehouseAdapter.setNewData(warehouseNodes);
++        lineAdapter.setNewData(lineNodes);
++        updateTip();
+     }
+ 
+-    private void fetchAndEnter(final ConfigNodeBean node) {
++    // ---------------- 中列：仓库 ----------------
++
++    /** 点中列仓库：勾选 + 拉取判型填右列。 */
++    private void onWarehouseClicked(final ConfigNodeBean node) {
++        if (node == null) return;
++        selectedWarehouse = node;
++        warehouseAdapter.setSelected(node);
+         tvTip.setText("正在拉取…");
+         ConfigRepo.fetchNode(node.url, new ConfigRepo.NodeCallback() {
+             @Override
+             public void onSuccess(ConfigRepo.FetchResult result) {
+                 if (!isShowing()) return;
+-                enterByType(result, node);
++                fillRightByWarehouseType(result, node);
+             }
+ 
+             @Override
+             public void onError(String msg) {
+                 if (!isShowing()) return;
+                 tvTip.setText(msg);
+                 Toast.makeText(getContext(), msg, Toast.LENGTH_SHORT).show();
+             }
+         });
+     }
+ 
++    /** 仓库判型结果填右列：LINE=真实线路 / WAREHOUSE=套娃仓列表借用右列 / TERMINAL=单条虚拟线路。 */
++    private void fillRightByWarehouseType(ConfigRepo.FetchResult result, ConfigNodeBean warehouse) {
++        selectedLine = null;
++        lineAdapter.setSelected(null);
++        lineNodes.clear();
++        if (result.type == ConfigNodeBean.TYPE_TERMINAL) {
++            // 仓库下挂单终端：补虚拟线路（url=仓库 url）即可激活
++            lineNodes.add(new ConfigNodeBean(ConfigRepo.genVirtualName("自定义线路"),
++                    warehouse.url, ConfigNodeBean.TYPE_TERMINAL, true));
++        } else {
++            lineNodes.addAll(result.nodes);
++        }
++        lineAdapter.setNewData(lineNodes);
++        updateTip();
++    }
++
++    // ---------------- 右列：线路 ----------------
++
+     /**
+-     * 按（被点节点类型, 判型结果）分派进入下一层，缺失层级补虚拟节点保证三级完整。
+-     * node 为 null 时视为配置级（兼容旧调用）。
++     * 点右列线路：终端（虚拟/判型即终端）直接激活；套娃链接拉取后层级借用右列展示下级。
+      */
+-    private void enterByType(ConfigRepo.FetchResult result, ConfigNodeBean node) {
+-        int nodeType = node == null ? ConfigNodeBean.TYPE_CONFIG : node.type;
+-        String crumb = node == null ? null : node.name;
+-        String url = node == null ? "" : node.url;
+-        switch (nodeType) {
+-            case ConfigNodeBean.TYPE_LINE:
+-                if (result.type == ConfigNodeBean.TYPE_TERMINAL) {
+-                    applyLine(node); // 线路条目判型即终端：用真实名直接激活，不再压虚拟层
+-                    return;
+-                }
+-                // 线路下钻：LINE 语义不变 / WAREHOUSE 加深为仓列表，均以真实名记账
+-                pushLevel(buildLevel(result), crumb);
+-                return;
+-            case ConfigNodeBean.TYPE_WAREHOUSE:
++    private void onLineClicked(final ConfigNodeBean node) {
++        if (node == null) return;
++        selectedLine = node;
++        lineAdapter.setSelected(node);
++        if (node.type == ConfigNodeBean.TYPE_TERMINAL) {
++            applyLine(node); // 终端节点直接激活（真实 name/url）
++            return;
++        }
++        tvTip.setText("正在拉取…");
++        ConfigRepo.fetchNode(node.url, new ConfigRepo.NodeCallback() {
++            @Override
++            public void onSuccess(ConfigRepo.FetchResult result) {
++                if (!isShowing()) return;
+                 if (result.type == ConfigNodeBean.TYPE_TERMINAL) {
+-                    // 仓库下挂单终端：补虚拟线路即可激活，面包屑只记真实仓名
+-                    Level level = new Level();
+-                    level.nodes.add(new ConfigNodeBean(ConfigRepo.genVirtualName("自定义线路"), url,
+-                            ConfigNodeBean.TYPE_TERMINAL, true));
+-                    pushLevel(level, crumb);
++                    applyLine(node); // 内容即终端配置：用真实 name/url 激活，不再换层
+                     return;
+                 }
+-                // LINE → 线路层；WAREHOUSE → 仓库套娃仓列表，均不加虚拟仓库
+-                pushLevel(buildLevel(result), crumb);
+-                return;
+-            default: // TYPE_CONFIG
+-                if (result.type == ConfigNodeBean.TYPE_LINE) {
+-                    // urls 型线路列表：缺仓库层 → 面包屑补「配置名 > 虚拟仓库名」
+-                    pushLevel(buildLevel(result), crumb, ConfigRepo.genVirtualName("自定义仓库"));
+-                } else if (result.type == ConfigNodeBean.TYPE_TERMINAL) {
+-                    // 补虚拟仓库 + 单条虚拟线路（url=配置自身，可激活）
+-                    Level level = new Level();
+-                    level.nodes.add(new ConfigNodeBean(ConfigRepo.genVirtualName("自定义线路"), url,
+-                            ConfigNodeBean.TYPE_TERMINAL, true));
+-                    pushLevel(level, crumb, ConfigRepo.genVirtualName("自定义仓库"));
+-                } else {
+-                    // 仓库列表：以真实配置名加深面包屑
+-                    pushLevel(buildLevel(result), crumb);
+-                }
+-        }
+-    }
++                // 层级借用右列：LINE=线路列表 / WAREHOUSE=仓列表，勾选随列重建失效
++                selectedLine = null;
++                lineAdapter.setSelected(null);
++                lineNodes.clear();
++                lineNodes.addAll(result.nodes);
++                lineAdapter.setNewData(lineNodes);
++                updateTip();
++            }
+ 
+-    /** 用判型结果（真实 json 名称节点）构建新层。 */
+-    private Level buildLevel(ConfigRepo.FetchResult result) {
+-        Level level = new Level();
+-        level.nodes.addAll(result.nodes);
+-        return level;
++            @Override
++            public void onError(String msg) {
++                if (!isShowing()) return;
++                tvTip.setText(msg);
++                Toast.makeText(getContext(), msg, Toast.LENGTH_SHORT).show();
++            }
++        });
+     }
+ 
+-    private boolean onItemLongClicked(ConfigNodeBean node) {
+-        if (node == null) return true;
+-        if (node.type != ConfigNodeBean.TYPE_CONFIG) {
+-            return true; // 长按刷新仅配置级
+-        }
+-        ConfigRepo.invalidateTree(node.url); // 整棵资源树缓存失效（含已缓存的下级节点）
+-        popToRoot();
+-        fetchAndEnter(node); // 重钻该配置
+-        return true;
+-    }
++    // ---------------- 删除 ----------------
+ 
+-    private void onDeleteClicked(final ConfigNodeBean node) {
++    /** 删左列配置：持久移除；若该配置即生效源或其缓存树含生效线路，清 API_URL 重启首页。 */
++    private void onDeleteConfig(final ConfigNodeBean node) {
+         if (node == null) return;
+-        if (node.type == ConfigNodeBean.TYPE_CONFIG) {
+-            deleteConfig(node);
+-        } else {
+-            // 仓库/线路级：会话内移除（无持久拉黑，刷新/重进弹窗恢复）
+-            confirmDelete("从列表移除「" + node.name + "」？（刷新后恢复）", new Runnable() {
+-                @Override
+-                public void run() {
+-                    ConfigRepo.sessionRemove(node.url);
+-                    stack.get(stack.size() - 1).nodes.remove(node);
+-                    refreshUi();
+-                }
+-            });
+-        }
+-    }
+-
+-    private void deleteConfig(final ConfigNodeBean node) {
+         final String activeUrl = ConfigRepo.getActiveUrl();
+         String tip = activeUrl.isEmpty()
+                 ? "删除「" + node.name + "」？"
+                 : "删除「" + node.name + "」？若当前源来自该配置将恢复默认。";
+         confirmDelete(tip, new Runnable() {
+             @Override
+             public void run() {
+                 ConfigRepo.removeConfigItem(node.url);
+                 // 该配置自身即生效源（TERMINAL 经虚拟线路激活时 CONFIG_ACTIVE==config.url，
+                 // cacheTreeContains 只查子孙查不到根）或其缓存树含生效线路 → 回默认源并重载
+@@ -289,46 +290,119 @@ public class ConfigDialog extends BaseDialog {
+                         && (node.url.equals(activeUrl) || ConfigRepo.cacheTreeContains(node.url, activeUrl))) {
+                     ConfigRepo.setActiveUrl("");
+                     Hawk.put(HawkConfig.API_URL, "");
+                     SourceViewModel.clearRuntimeCache();
+                     dismiss();
+                     Intent intent = new Intent(getContext(), HomeActivity.class);
+                     intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
+                     getContext().startActivity(intent);
+                     return;
+                 }
+-                rebuildRootLevel();
++                // 重建左列（按 url 保留幸存的勾选）并清空中/右列
++                rebuildConfigColumn(selectedConfig == null ? null : selectedConfig.url);
+             }
+         });
+     }
+ 
++    /** 用最新持久配置列表重建左列，清空中/右列；keepUrl 幸存时恢复其勾选。 */
++    private void rebuildConfigColumn(String keepUrl) {
++        configNodes.clear();
++        for (ConfigItem item : ConfigRepo.getConfigList()) {
++            configNodes.add(new ConfigNodeBean(item.name, item.url, ConfigNodeBean.TYPE_CONFIG, false));
++        }
++        selectedConfig = null;
++        if (keepUrl != null) {
++            for (ConfigNodeBean node : configNodes) {
++                if (node.url != null && node.url.equals(keepUrl)) {
++                    selectedConfig = node;
++                    break;
++                }
++            }
++        }
++        configAdapter.setNewData(configNodes);
++        configAdapter.setSelected(selectedConfig);
++        clearMiddleAndRight();
++        updateTip();
++    }
++
++    /** 清空中/右列及其勾选态（删配置/重钻后的下游复位）。 */
++    private void clearMiddleAndRight() {
++        selectedWarehouse = null;
++        selectedLine = null;
++        warehouseAdapter.setSelected(null);
++        lineAdapter.setSelected(null);
++        warehouseNodes.clear();
++        lineNodes.clear();
++        warehouseAdapter.setNewData(warehouseNodes);
++        lineAdapter.setNewData(lineNodes);
++    }
++
++    /** 删中列仓库：会话移除 + 列表移除 + 右列清空。 */
++    private void onDeleteWarehouse(final ConfigNodeBean node) {
++        if (node == null) return;
++        confirmDelete("从列表移除「" + node.name + "」？（刷新后恢复）", new Runnable() {
++            @Override
++            public void run() {
++                ConfigRepo.sessionRemove(node.url);
++                removeByRef(warehouseNodes, node);
++                if (selectedWarehouse == node) selectedWarehouse = null;
++                warehouseAdapter.notifyDataSetChanged();
++                clearRightColumn();
++            }
++        });
++    }
++
++    /** 删右列线路：会话移除 + 列表移除。 */
++    private void onDeleteLine(final ConfigNodeBean node) {
++        if (node == null) return;
++        confirmDelete("从列表移除「" + node.name + "」？（刷新后恢复）", new Runnable() {
++            @Override
++            public void run() {
++                ConfigRepo.sessionRemove(node.url);
++                removeByRef(lineNodes, node);
++                if (selectedLine == node) selectedLine = null;
++                lineAdapter.notifyDataSetChanged();
++                updateTip();
++            }
++        });
++    }
++
++    /** 清空右列及勾选态（删仓库后的下游复位）。 */
++    private void clearRightColumn() {
++        selectedLine = null;
++        lineAdapter.setSelected(null);
++        lineNodes.clear();
++        lineAdapter.setNewData(lineNodes);
++        updateTip();
++    }
++
+     // ---------------- 推送与激活 ----------------
+ 
+     private void onConfirmClicked() {
+         String url = etUrl.getText().toString().trim();
+         if (TextUtils.isEmpty(url)) {
+             Toast.makeText(getContext(), "请输入配置链接", Toast.LENGTH_SHORT).show();
+             return;
+         }
+         String name = etName.getText().toString().trim();
+         if (TextUtils.isEmpty(name)) {
+             name = ConfigRepo.genConfigName();
+         }
+         final ConfigNodeBean node = new ConfigNodeBean(name, url, ConfigNodeBean.TYPE_CONFIG, false);
+         if (!ConfigRepo.addConfigItem(node.name, node.url)) {
+             Toast.makeText(getContext(), "该链接已存在", Toast.LENGTH_SHORT).show();
+             return;
+         }
+         etName.setText("");
+         etUrl.setText("");
+-        rebuildRootLevel(); // 根层带上新条目并回到配置级
+-        fetchAndEnter(node); // 加入后自动钻入该配置
++        rebuildConfigColumn(node.url); // 重建左列并勾选新条目
++        fetchConfigIntoColumns(node); // 加入后自动拉取填中/右列
+     }
+ 
+     /** 激活线路（沿用既有生效链路，另记 CONFIG_ACTIVE 供✓回显）。 */
+     private void applyLine(final ConfigNodeBean node) {
+         String oldApi = Hawk.get(HawkConfig.API_URL, "");
+         if (node.url.equals(oldApi)) {
+             dismiss();
+             return;
+         }
+         new TipDialog(getContext(), "切换到「" + node.name + "」并重载配置？", "取消", "确定",
+@@ -365,11 +439,20 @@ public class ConfigDialog extends BaseDialog {
+             @Override
+             public void right() {
+                 action.run();
+             }
+ 
+             @Override
+             public void cancel() {
+             }
+         }).show();
+     }
++
++    @Override
++    public boolean onKeyDown(int keyCode, KeyEvent event) {
++        if (keyCode == KeyEvent.KEYCODE_BACK) {
++            dismiss(); // 三栏结构已表达层级，返回键直接关闭
++            return true;
++        }
++        return super.onKeyDown(keyCode, event);
++    }
+ }
+diff --git a/app/src/main/res/drawable/shape_config_row_selected.xml b/app/src/main/res/drawable/shape_config_row_selected.xml
+new file mode 100644
+index 0000000..b0f58cd
+--- /dev/null
++++ b/app/src/main/res/drawable/shape_config_row_selected.xml
+@@ -0,0 +1,18 @@
++<?xml version="1.0" encoding="utf-8"?>
++<!-- 配置弹窗三列勾选态：橙色描边常驻高亮（聚焦时叠加深色底强化焦点可见性）；
++     圆角与默认行背景 button_dialog_vod 对齐，颜色复用项目已有 color_FF5F00 -->
++<selector xmlns:android="http://schemas.android.com/apk/res/android">
++    <item android:state_focused="true">
++        <shape>
++            <corners android:radius="@dimen/vs_30" />
++            <stroke android:width="@dimen/vs_2" android:color="@color/color_FF5F00" />
++            <solid android:color="@color/color_66000000" />
++        </shape>
++    </item>
++    <item>
++        <shape>
++            <corners android:radius="@dimen/vs_30" />
++            <stroke android:width="@dimen/vs_2" android:color="@color/color_FF5F00" />
++        </shape>
++    </item>
++</selector>
+diff --git a/app/src/main/res/layout/dialog_config.xml b/app/src/main/res/layout/dialog_config.xml
+index de18cf9..8bed2c6 100644
+--- a/app/src/main/res/layout/dialog_config.xml
++++ b/app/src/main/res/layout/dialog_config.xml
+@@ -1,12 +1,13 @@
+ <?xml version="1.0" encoding="utf-8"?>
+-<!-- 配置弹窗：标题+面包屑/扫码推送/关闭，中部三级配置列表，底部手动添加输入行 -->
++<!-- 配置弹窗（Finder 三栏式）：标题/扫码推送/关闭 + 配置|仓库|线路 三列联动列表 + 底部手动添加输入行。
++     层级由三列横排表达（不再使用面包屑），TV 焦点左右键自然跨列移动 -->
+ <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+     android:layout_width="@dimen/vs_960"
+     android:layout_height="@dimen/vs_480"
+     android:background="@drawable/shape_danmu_setting_bg"
+     android:orientation="vertical">
+ 
+     <RelativeLayout
+         android:layout_width="match_parent"
+         android:layout_height="@dimen/vs_50"
+         android:paddingLeft="@dimen/vs_30"
+@@ -14,30 +15,20 @@
+ 
+         <TextView
+             android:id="@+id/tvTitle"
+             android:layout_width="wrap_content"
+             android:layout_height="match_parent"
+             android:gravity="center"
+             android:text="配置"
+             android:textColor="@color/atv_text_primary"
+             android:textSize="@dimen/ts_26" />
+ 
+-        <TextView
+-            android:id="@+id/tvBreadcrumb"
+-            android:layout_width="wrap_content"
+-            android:layout_height="match_parent"
+-            android:layout_marginLeft="@dimen/vs_20"
+-            android:layout_toRightOf="@id/tvTitle"
+-            android:gravity="center"
+-            android:textColor="@color/atv_text_secondary"
+-            android:textSize="@dimen/ts_20" />
+-
+         <TextView
+             android:id="@+id/btnScan"
+             android:layout_width="wrap_content"
+             android:layout_height="match_parent"
+             android:layout_toLeftOf="@id/ivClose"
+             android:focusable="true"
+             android:gravity="center"
+             android:paddingLeft="@dimen/vs_20"
+             android:paddingRight="@dimen/vs_20"
+             android:text="扫码推送"
+@@ -56,27 +47,104 @@
+ 
+     <TextView
+         android:id="@+id/tvTip"
+         android:layout_width="match_parent"
+         android:layout_height="wrap_content"
+         android:paddingLeft="@dimen/vs_30"
+         android:text=""
+         android:textColor="@color/atv_text_secondary"
+         android:textSize="@dimen/ts_20" />
+ 
+-    <com.owen.tvrecyclerview.widget.TvRecyclerView
+-        android:id="@+id/rvConfig"
++    <!-- 三列联动区：左=配置 / 中=仓库 / 右=线路，各列列头 + 竖向列表 -->
++    <LinearLayout
+         android:layout_width="match_parent"
+         android:layout_height="0dp"
+         android:layout_weight="1"
+-        android:paddingLeft="@dimen/vs_30"
+-        android:paddingRight="@dimen/vs_30" />
++        android:orientation="horizontal"
++        android:paddingLeft="@dimen/vs_20"
++        android:paddingRight="@dimen/vs_20"
++        android:paddingTop="@dimen/vs_5">
++
++        <LinearLayout
++            android:layout_width="0dp"
++            android:layout_height="match_parent"
++            android:layout_weight="1"
++            android:orientation="vertical">
++
++            <TextView
++                android:layout_width="match_parent"
++                android:layout_height="@dimen/vs_40"
++                android:gravity="center"
++                android:text="配置"
++                android:textColor="@color/atv_text_secondary"
++                android:textSize="@dimen/ts_20"
++                android:textStyle="bold" />
++
++            <com.owen.tvrecyclerview.widget.TvRecyclerView
++                android:id="@+id/rvConfig"
++                android:layout_width="match_parent"
++                android:layout_height="0dp"
++                android:layout_weight="1"
++                android:paddingLeft="@dimen/vs_5"
++                android:paddingRight="@dimen/vs_5" />
++        </LinearLayout>
++
++        <LinearLayout
++            android:layout_width="0dp"
++            android:layout_height="match_parent"
++            android:layout_marginLeft="@dimen/vs_20"
++            android:layout_weight="1"
++            android:orientation="vertical">
++
++            <TextView
++                android:layout_width="match_parent"
++                android:layout_height="@dimen/vs_40"
++                android:gravity="center"
++                android:text="仓库"
++                android:textColor="@color/atv_text_secondary"
++                android:textSize="@dimen/ts_20"
++                android:textStyle="bold" />
++
++            <com.owen.tvrecyclerview.widget.TvRecyclerView
++                android:id="@+id/rvWarehouse"
++                android:layout_width="match_parent"
++                android:layout_height="0dp"
++                android:layout_weight="1"
++                android:paddingLeft="@dimen/vs_5"
++                android:paddingRight="@dimen/vs_5" />
++        </LinearLayout>
++
++        <LinearLayout
++            android:layout_width="0dp"
++            android:layout_height="match_parent"
++            android:layout_marginLeft="@dimen/vs_20"
++            android:layout_weight="1"
++            android:orientation="vertical">
++
++            <TextView
++                android:layout_width="match_parent"
++                android:layout_height="@dimen/vs_40"
++                android:gravity="center"
++                android:text="线路"
++                android:textColor="@color/atv_text_secondary"
++                android:textSize="@dimen/ts_20"
++                android:textStyle="bold" />
++
++            <com.owen.tvrecyclerview.widget.TvRecyclerView
++                android:id="@+id/rvLine"
++                android:layout_width="match_parent"
++                android:layout_height="0dp"
++                android:layout_weight="1"
++                android:paddingLeft="@dimen/vs_5"
++                android:paddingRight="@dimen/vs_5" />
++        </LinearLayout>
++    </LinearLayout>
+ 
+     <LinearLayout
+         android:layout_width="match_parent"
+         android:layout_height="@dimen/vs_60"
+         android:orientation="horizontal"
+         android:paddingLeft="@dimen/vs_30"
+         android:paddingRight="@dimen/vs_30">
+ 
+         <EditText
+             android:id="@+id/etName"
+diff --git a/app/src/main/res/layout/item_config_row.xml b/app/src/main/res/layout/item_config_row.xml
+index 66e5366..18055f0 100644
+--- a/app/src/main/res/layout/item_config_row.xml
++++ b/app/src/main/res/layout/item_config_row.xml
+@@ -1,13 +1,14 @@
+ <?xml version="1.0" encoding="utf-8"?>
+ <!-- 配置弹窗条目：名称 + 生效✓ + 删除；tvName 锚定 ivSelected 左侧避免与✓重叠；
+-     行根布局用 button_dialog_vod 两态背景（聚焦半透明高亮/常态透明）提供 TV 焦点视觉 -->
++     行根布局默认 button_dialog_vod 两态背景（聚焦半透明高亮/常态透明）提供 TV 焦点视觉，
++     勾选态行由 ConfigAdapter 切换为 shape_config_row_selected（橙色描边常驻高亮） -->
+ <RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+     android:layout_width="match_parent"
+     android:layout_height="@dimen/vs_50"
+     android:layout_marginTop="@dimen/vs_10"
+     android:background="@drawable/button_dialog_vod"
+     android:focusable="true">
+ 
+     <TextView
+         android:id="@+id/tvName"
+         android:layout_width="match_parent"

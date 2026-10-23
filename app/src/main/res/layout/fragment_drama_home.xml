@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 短剧主页（DramaHomeFragment，与点播 fragment_user.xml 同构）：
+     Hero 铺满整屏作底图 + 底部一行货架 + gridOverlay 二级叠加层。
+     tab 行/历史/收藏/分类房间由 HomeActivity 统一管理，页面自身不含 tab 行。 -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/atv_bg"
+    android:clipChildren="false"
+    android:clipToPadding="false"
+    android:descendantFocusability="afterDescendants">
+
+    <com.github.gcd888.guoju.ui.widget.HeroBannerView
+        android:id="@+id/heroBanner"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:visibility="gone" />
+
+    <com.owen.tvrecyclerview.widget.TvRecyclerView
+        android:id="@+id/mGridView"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom"
+        android:clipChildren="false"
+        android:clipToPadding="false"
+        android:paddingLeft="@dimen/atv_safe_side"
+        android:paddingRight="@dimen/atv_safe_side"
+        android:paddingTop="@dimen/vs_20"
+        android:paddingBottom="@dimen/vs_10"
+        app:tv_horizontalSpacingWithMargins="@dimen/atv_poster_gap"
+        app:tv_selectedItemIsCentered="true"
+        app:tv_verticalSpacingWithMargins="@dimen/vs_10" />
+
+    <!-- 推荐 tab 二级全屏网格：双击推荐 tab 展开，盖住 Hero 与货架（多行多列全部推荐资源） -->
+    <com.owen.tvrecyclerview.widget.TvRecyclerView
+        android:id="@+id/gridOverlay"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="@color/atv_bg"
+        android:clipToPadding="false"
+        android:paddingLeft="@dimen/atv_safe_side"
+        android:paddingRight="@dimen/atv_safe_side"
+        android:paddingTop="@dimen/vs_80"
+        android:paddingBottom="@dimen/vs_20"
+        android:visibility="gone"
+        app:tv_horizontalSpacingWithMargins="@dimen/atv_poster_gap"
+        app:tv_selectedItemIsCentered="false"
+        app:tv_verticalSpacingWithMargins="@dimen/vs_10" />
+</FrameLayout>

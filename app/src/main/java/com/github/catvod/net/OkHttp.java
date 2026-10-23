@@ -2,8 +2,8 @@ package com.github.catvod.net;
 
 import androidx.collection.ArrayMap;
 
-import com.github.tvbox.osc.util.SSL.SSLSocketFactoryCompat;
-import com.github.tvbox.osc.util.OkGoHelper;
+import com.github.gcd888.guoju.util.SSL.SSLSocketFactoryCompat;
+import com.github.gcd888.guoju.util.OkGoHelper;
 
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
