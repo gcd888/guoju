@@ -17,11 +17,13 @@ import com.github.gcd888.guoju.cache.VodRecordDao;
  * @author pj567
  * @since 2020/5/15
  */
-@Database(entities = {Cache.class, VodRecord.class, VodCollect.class}, version = 2)
+@Database(entities = {Cache.class, VodRecord.class, VodCollect.class, ConfigRoute.class}, version = 3)
 public abstract class AppDataBase extends RoomDatabase {
     public abstract CacheDao getCacheDao();
 
     public abstract VodRecordDao getVodRecordDao();
 
     public abstract VodCollectDao getVodCollectDao();
+
+    public abstract ConfigRouteDao getConfigRouteDao();
 }

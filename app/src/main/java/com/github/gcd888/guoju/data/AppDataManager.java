@@ -20,7 +20,7 @@ import java.io.IOException;
  * @since 2020/5/15
  */
 public class AppDataManager {
-    private static final int DB_FILE_VERSION = 3;
+    private static final int DB_FILE_VERSION = 4;
     private static final String DB_NAME = "guoju";
     private static AppDataManager manager;
     private static AppDataBase dbInstance;

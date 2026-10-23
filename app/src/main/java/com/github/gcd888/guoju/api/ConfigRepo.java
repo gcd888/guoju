@@ -4,6 +4,9 @@ import android.text.TextUtils;
 
 import com.github.gcd888.guoju.bean.ConfigItem;
 import com.github.gcd888.guoju.bean.ConfigNodeBean;
+import com.github.gcd888.guoju.data.AppDataManager;
+import com.github.gcd888.guoju.data.ConfigRoute;
+import com.github.gcd888.guoju.data.ConfigRouteDao;
 import com.github.gcd888.guoju.server.ControlManager;
 import com.github.gcd888.guoju.util.HawkConfig;
 import com.lzy.okgo.OkGo;
@@ -17,10 +20,12 @@ import org.json.JSONObject;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * 配置弹窗数据层：配置 > 仓库 > 线路 三级钻取。
@@ -54,8 +59,6 @@ public final class ConfigRepo {
     private static final Map<String, FetchResult> CACHE = new HashMap<>();
     /** 会话内删除的仓库/线路 url（本会话不再出现；刷新/重进弹窗恢复）。 */
     private static final List<String> SESSION_REMOVED = new ArrayList<>();
-    private static int warehouseSeq = 0;
-    private static int lineSeq = 0;
 
     private ConfigRepo() {
     }
@@ -140,14 +143,6 @@ public final class ConfigRepo {
         return "自定义配置" + (max + 1);
     }
 
-    /** 虚拟层命名（自定义仓库N/自定义线路N），会话内各自独立递增。 */
-    public static String genVirtualName(String prefix) {
-        if ("自定义仓库".equals(prefix)) {
-            return prefix + (++warehouseSeq);
-        }
-        return prefix + (++lineSeq);
-    }
-
     private static int seqOf(String name, String prefix) {
         if (name == null || !name.startsWith(prefix)) {
             return 0;
@@ -169,24 +164,9 @@ public final class ConfigRepo {
 
     public static void resetSession() {
         SESSION_REMOVED.clear();
-        warehouseSeq = 0;
-        lineSeq = 0;
     }
 
     // ---------------- 拉取与判型 ----------------
-
-    public static void invalidate(String url) {
-        CACHE.remove(url);
-    }
-
-    public static void invalidateAll() {
-        CACHE.clear();
-    }
-
-    /** 会话缓存只读窥视（弹窗探测线路数据段用；该 url 尚未拉取过返回 null）。 */
-    public static FetchResult peekCache(String url) {
-        return url == null ? null : CACHE.get(url);
-    }
 
     /**
      * 失效整棵会话缓存子树（长按刷新配置用；含 root 自身，遍历已缓存下级）。
@@ -213,25 +193,9 @@ public final class ConfigRepo {
         SESSION_REMOVED.removeAll(treeUrls);
     }
 
-    /** 检查 rootUrl 会话缓存子树（已展开部分）是否包含 target url（visited 防缓存 url 成环）。 */
-    public static boolean cacheTreeContains(String rootUrl, String target) {
-        if (TextUtils.isEmpty(target)) return false;
-        List<String> pending = new ArrayList<>();
-        Set<String> visited = new HashSet<>();
-        pending.add(rootUrl);
-        visited.add(rootUrl);
-        while (!pending.isEmpty()) {
-            String cur = pending.remove(0);
-            FetchResult cached = CACHE.get(cur);
-            if (cached == null) continue;
-            for (ConfigNodeBean n : cached.nodes) {
-                if (target.equals(n.url)) return true;
-                if (visited.add(n.url)) {
-                    pending.add(n.url);
-                }
-            }
-        }
-        return false;
+    /** 检查某 url 是否被会话删除（弹窗渲染过滤用；重开弹窗经 resetSession 恢复）。 */
+    public static boolean isSessionRemoved(String url) {
+        return url != null && SESSION_REMOVED.contains(url);
     }
 
     /** 拉取并判型（带会话缓存；SESSION_REMOVED 过滤下级节点）。 */
@@ -377,5 +341,195 @@ public final class ConfigRepo {
             fix = ControlManager.get().getAddress(true) + "file/";
         }
         return link.replace("clan://localhost/", fix);
+    }
+
+    // ---------------- 配置树扫描 + 路由表（持久：类型|配置|仓库|线路 谱系） ----------------
+
+    /** 扫描结果节点：url → 判型/名称/数据段/父节点。type 未知（拉取失败）时为 -1。 */
+    public static class ScanNode {
+        public String url;
+        public String name;
+        public int type = -1;
+        public final Set<String> sections = new LinkedHashSet<>();
+        /** 父节点 url；根为 null。 */
+        public String parentUrl;
+    }
+
+    public interface ScanCallback {
+        /** 全部节点扫描完成（成功或失败均回调一次，主线程）。 */
+        void onDone(Map<String, ScanNode> nodes, List<String> order);
+    }
+
+    /**
+     * 深度优先扫描配置树（深度≤4），产出全节点判型与父子谱系。
+     * 完成判定用对称计数（入队前 +1、回调必 -1），无静默失败口；结果经主线程 post 回调。
+     * 节点拉取失败保留为 type=-1 的叶子（其谱系已知，只是无分类）。
+     */
+    public static void scanTree(String rootUrl, final ScanCallback callback) {
+        final Map<String, ScanNode> nodes = new LinkedHashMap<>();
+        final List<String> order = new ArrayList<>();
+        final AtomicInteger pending = new AtomicInteger(1);
+        scanUrl(rootUrl, null, null, 0, nodes, order, pending, callback);
+    }
+
+    private static void scanUrl(final String url, final String name, final String parentUrl, final int depth,
+                                final Map<String, ScanNode> nodes, final List<String> order,
+                                final AtomicInteger pending, final ScanCallback callback) {
+        if (depth > 4 || url == null || url.isEmpty()) {
+            finishScan(pending, nodes, order, callback);
+            return;
+        }
+        ScanNode node = new ScanNode();
+        node.url = url;
+        node.name = name;
+        node.parentUrl = parentUrl;
+        nodes.put(url, node);
+        order.add(url);
+        fetchNode(url, new NodeCallback() {
+            @Override
+            public void onSuccess(FetchResult result) {
+                node.type = result.type;
+                node.sections.addAll(result.sections);
+                if (depth < 4) {
+                    for (ConfigNodeBean child : result.nodes) {
+                        pending.incrementAndGet();
+                        scanUrl(child.url, child.name, url, depth + 1, nodes, order, pending, callback);
+                    }
+                }
+                finishScan(pending, nodes, order, callback);
+            }
+
+            @Override
+            public void onError(String msg) {
+                // 失败节点保留：谱系已入树，只是无判型无分类
+                finishScan(pending, nodes, order, callback);
+            }
+        });
+    }
+
+    /** 计数归零 = 全树扫描完成；统一主线程 post，规避同步递归在回调里重入。 */
+    private static void finishScan(final AtomicInteger pending, final Map<String, ScanNode> nodes,
+                                   final List<String> order, final ScanCallback callback) {
+        if (pending.decrementAndGet() != 0) {
+            return;
+        }
+        new android.os.Handler(android.os.Looper.getMainLooper()).post(new Runnable() {
+            @Override
+            public void run() {
+                callback.onDone(nodes, order);
+            }
+        });
+    }
+
+    /** 数据段 → 模块类型（0=点播 1=直播 2=短剧 3=音乐）；未知段返回 null。 */
+    public static Integer sectionToType(String section) {
+        if (SECTION_SITES.equals(section)) return 0;
+        if (SECTION_LIVES.equals(section)) return 1;
+        if (SECTION_DRAMAS.equals(section)) return 2;
+        if (SECTION_MUSICS.equals(section)) return 3;
+        return null;
+    }
+
+    /**
+     * 扫描结果落路由表：先删该配置旧行再按树拓扑序插入（幂等，行序=DFS 先序）。
+     * 一条终端线路含 N 个数据段 → N 行；类型单值。
+     * 行序必须按树拓扑重构（兄弟顺序=JSON 列表序）：扫描完成序受网络时序影响 ≠ 列表序，
+     * 否则"自动应用/默认选中"会落到第二个仓库的第一条线路。
+     * 虚拟层规则：根即终端 → 仓库/线路地址=配置地址；线路直接挂配置下（LINE 型根）→ 虚拟仓库地址=配置地址；
+     * 套娃中间层 → 仓库=线路的直接父节点。
+     */
+    public static int rebuildRouteRows(String rootUrl, Map<String, ScanNode> nodes, List<String> order) {
+        ScanNode root = nodes.get(rootUrl);
+        String rootName = root != null && root.name != null && !root.name.trim().isEmpty()
+                ? root.name.trim() : "自定义配置";
+        List<ConfigRoute> rows = new ArrayList<>();
+        long now = System.currentTimeMillis();
+        if (root != null && root.type == ConfigNodeBean.TYPE_TERMINAL) {
+            // 根即终端：仓库/线路均为虚拟层，单条线路
+            for (String section : root.sections) {
+                Integer type = sectionToType(section);
+                if (type == null) continue;
+                rows.add(newRouteRow(type, rootName, rootUrl, "自定义仓库", rootUrl, rootName, rootUrl, now));
+            }
+        } else {
+            for (ScanNode n : canonicalOrder(rootUrl, nodes, order)) {
+                if (n.type != ConfigNodeBean.TYPE_TERMINAL) continue;
+                ScanNode parent = n.parentUrl == null ? null : nodes.get(n.parentUrl);
+                String lineName = n.name == null || n.name.trim().isEmpty() ? n.url : n.name.trim();
+                String lineUrl = n.url;
+                String warehouseName;
+                String warehouseUrl;
+                if (n.parentUrl != null && n.parentUrl.equals(rootUrl)
+                        && root != null && root.type == ConfigNodeBean.TYPE_LINE) {
+                    // LINE 型根：线路直接挂配置下 → 虚拟仓库
+                    warehouseName = "自定义仓库";
+                    warehouseUrl = rootUrl;
+                } else if (parent != null) {
+                    warehouseName = parent.name == null || parent.name.trim().isEmpty() ? n.parentUrl : parent.name.trim();
+                    warehouseUrl = n.parentUrl;
+                } else {
+                    warehouseName = "自定义仓库";
+                    warehouseUrl = rootUrl;
+                }
+                for (String section : n.sections) {
+                    Integer type = sectionToType(section);
+                    if (type == null) continue;
+                    rows.add(newRouteRow(type, rootName, rootUrl, warehouseName, warehouseUrl, lineName, lineUrl, now));
+                }
+            }
+        }
+        ConfigRouteDao dao = AppDataManager.get().getConfigRouteDao();
+        dao.deleteByConfigUrl(rootUrl);
+        if (!rows.isEmpty()) {
+            dao.insertAll(rows);
+        }
+        return rows.size();
+    }
+
+    /** 组装一行路由（避免重复字段赋值散落）。 */
+    private static ConfigRoute newRouteRow(int type, String configName, String configUrl,
+                                           String warehouseName, String warehouseUrl,
+                                           String lineName, String lineUrl, long now) {
+        ConfigRoute row = new ConfigRoute();
+        row.type = type;
+        row.configName = configName;
+        row.configUrl = configUrl;
+        row.warehouseName = warehouseName;
+        row.warehouseUrl = warehouseUrl;
+        row.lineName = lineName;
+        row.lineUrl = lineUrl;
+        row.updateTime = now;
+        return row;
+    }
+
+    /**
+     * 树拓扑序（DFS 先序）：兄弟相对顺序=各节点 JSON 列表序（扫描时同步入队，天然保序），
+     * 与网络完成时序无关。
+     */
+    private static List<ScanNode> canonicalOrder(String rootUrl, Map<String, ScanNode> nodes, List<String> order) {
+        Map<String, List<ScanNode>> childrenMap = new LinkedHashMap<>();
+        Set<String> linked = new HashSet<>();
+        for (String url : order) {
+            ScanNode n = nodes.get(url);
+            if (n == null || n.parentUrl == null || !linked.add(url)) continue;
+            List<ScanNode> list = childrenMap.get(n.parentUrl);
+            if (list == null) {
+                list = new ArrayList<>();
+                childrenMap.put(n.parentUrl, list);
+            }
+            list.add(n);
+        }
+        List<ScanNode> out = new ArrayList<>();
+        dfsChildren(rootUrl, childrenMap, out);
+        return out;
+    }
+
+    private static void dfsChildren(String url, Map<String, List<ScanNode>> childrenMap, List<ScanNode> out) {
+        List<ScanNode> children = childrenMap.get(url);
+        if (children == null) return;
+        for (ScanNode child : children) {
+            out.add(child);
+            dfsChildren(child.url, childrenMap, out);
+        }
     }
 }
