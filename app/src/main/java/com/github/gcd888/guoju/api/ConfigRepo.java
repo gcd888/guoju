@@ -9,6 +9,9 @@ import com.github.gcd888.guoju.data.ConfigRoute;
 import com.github.gcd888.guoju.data.ConfigRouteDao;
 import com.github.gcd888.guoju.server.ControlManager;
 import com.github.gcd888.guoju.util.HawkConfig;
+import com.github.gcd888.guoju.util.HistoryHelper;
+import com.github.gcd888.guoju.util.OkGoHelper;
+import com.github.gcd888.guoju.viewmodel.SourceViewModel;
 import com.lzy.okgo.OkGo;
 import com.lzy.okgo.callback.AbsCallback;
 import com.lzy.okgo.model.Response;
@@ -54,6 +57,11 @@ public final class ConfigRepo {
         /** 本 url 内容实际含有的数据段（sites/lives/dramas/musics）；仓库/线路列表层无段信息时为空。 */
         public final Set<String> sections = new LinkedHashSet<>();
     }
+
+    // 排查推送加载慢用（PushPerf 前缀日志，问题定位验证后全部移除）
+    private static final String TAG_PERF = "PushPerf";
+    /** 全树扫描完成时的总结日志任务，finishScan 归零分支触发执行。 */
+    private static final Runnable[] PENDING_SUMMARY = new Runnable[1];
 
     /** 会话缓存：url → 判型结果（含下级节点）。 */
     private static final Map<String, FetchResult> CACHE = new HashMap<>();
@@ -198,25 +206,73 @@ public final class ConfigRepo {
         return url != null && SESSION_REMOVED.contains(url);
     }
 
-    /** 拉取并判型（带会话缓存；SESSION_REMOVED 过滤下级节点）。 */
+    /** 拉取并判型（带会话缓存；SESSION_REMOVED 过滤下级节点）。默认超时与重试策略。 */
     public static void fetchNode(final String url, final NodeCallback callback) {
+        fetchNodeInternal(url, false, callback);
+    }
+
+    /**
+     * 扫描场景专用快速失败拉取：connect 5s + 零重试（read/write 沿用默认 20s）。
+     * 全树扫描有大量不可达节点（如 IPv6-only 子配置），默认策略 20s 超时 × 多次重试
+     * 会让单节点拖死整树（实测 166s/节点）；扫描只需判型，快速失败保留为 type=-1 叶子即可。
+     */
+    public static void fetchNodeFast(final String url, final NodeCallback callback) {
+        fetchNodeInternal(url, true, callback);
+    }
+
+    /** 扫描专用 client：基于全局默认 client 派生（保留 DNS/代理/SSL），仅覆写连接超时。 */
+    private static volatile okhttp3.OkHttpClient SCAN_CLIENT = null;
+
+    private static okhttp3.OkHttpClient scanClient() {
+        if (SCAN_CLIENT == null) {
+            synchronized (ConfigRepo.class) {
+                if (SCAN_CLIENT == null) {
+                    okhttp3.OkHttpClient base = OkGoHelper.getDefaultClient();
+                    okhttp3.OkHttpClient.Builder builder = base != null ? base.newBuilder()
+                            : new okhttp3.OkHttpClient.Builder()
+                            .proxySelector(OkGoHelper.proxySelector())
+                            .proxyAuthenticator(OkGoHelper.proxyAuthenticator());
+                    builder.connectTimeout(5, java.util.concurrent.TimeUnit.SECONDS);
+                    builder.retryOnConnectionFailure(false);
+                    SCAN_CLIENT = builder.build();
+                }
+            }
+        }
+        return SCAN_CLIENT;
+    }
+
+    private static void fetchNodeInternal(final String url, final boolean fast, final NodeCallback callback) {
         if (TextUtils.isEmpty(url)) {
             callback.onError("链接为空");
             return;
         }
         FetchResult cached = CACHE.get(url);
         if (cached != null) {
+            android.util.Log.d(TAG_PERF, "节点[缓存命中] " + toRequestUrl(url)); // 排查用，验证后移除
             callback.onSuccess(applySessionFilter(cached));
             return;
         }
-        OkGo.<String>get(toRequestUrl(url)).execute(new AbsCallback<String>() {
+        // 排查用计时日志（PushPerf 前缀，验证后全部移除）：区分下载耗时与解析耗时
+        final long fetchStart = android.os.SystemClock.elapsedRealtime();
+        final String requestUrl = toRequestUrl(url);
+        android.util.Log.d(TAG_PERF, (fast ? "[快扫]开始拉取 " : "开始拉取 ") + requestUrl);
+        AbsCallback<String> cb = new AbsCallback<String>() {
             @Override
             public void onSuccess(Response<String> response) {
                 try {
-                    FetchResult result = parseNodes(response.body(), url);
+                    String body = response.body();
+                    long parseStart = android.os.SystemClock.elapsedRealtime();
+                    FetchResult result = parseNodes(body, url);
+                    long parseCost = android.os.SystemClock.elapsedRealtime() - parseStart;
+                    long fetchCost = android.os.SystemClock.elapsedRealtime() - fetchStart;
+                    android.util.Log.d(TAG_PERF, "拉取成功 " + requestUrl
+                            + " 下载=" + (fetchCost - parseCost) + "ms 解析=" + parseCost
+                            + "ms 大小=" + (body == null ? 0 : body.length()) + "字符");
                     CACHE.put(url, result);
                     callback.onSuccess(applySessionFilter(result));
                 } catch (Throwable th) {
+                    android.util.Log.w(TAG_PERF, "解析失败 " + requestUrl
+                            + " 总耗时=" + (android.os.SystemClock.elapsedRealtime() - fetchStart) + "ms", th);
                     callback.onError("解析失败: " + th.getMessage());
                 }
             }
@@ -230,9 +286,18 @@ public final class ConfigRepo {
             public void onError(Response<String> response) {
                 super.onError(response);
                 Throwable t = response.getException();
+                android.util.Log.w(TAG_PERF, "拉取失败 " + requestUrl
+                        + " 耗时=" + (android.os.SystemClock.elapsedRealtime() - fetchStart) + "ms"
+                        + " 错误=" + (t == null ? "网络错误" : t.getMessage()));
                 callback.onError("拉取失败: " + (t == null ? "网络错误" : t.getMessage()));
             }
-        });
+        };
+        if (fast) {
+            // 快扫：connect 5s + 零重试；OkGo 默认 retryCount=3 会把单次 20s 超时放大数倍
+            OkGo.<String>get(requestUrl).client(scanClient()).retryCount(0).execute(cb);
+        } else {
+            OkGo.<String>get(requestUrl).execute(cb);
+        }
     }
 
     private static FetchResult applySessionFilter(FetchResult src) {
@@ -369,7 +434,16 @@ public final class ConfigRepo {
         final Map<String, ScanNode> nodes = new LinkedHashMap<>();
         final List<String> order = new ArrayList<>();
         final AtomicInteger pending = new AtomicInteger(1);
+        final long scanStart = android.os.SystemClock.elapsedRealtime(); // 排查用，验证后移除
         scanUrl(rootUrl, null, null, 0, nodes, order, pending, callback);
+        // 全树总结：节点数在扫描中递增，完成时回读（闭包持有引用）
+        PENDING_SUMMARY[0] = new Runnable() {
+            @Override
+            public void run() {
+                android.util.Log.d(TAG_PERF, "全树扫描完成 节点数=" + nodes.size()
+                        + " 总耗时=" + (android.os.SystemClock.elapsedRealtime() - scanStart) + "ms 根=" + rootUrl);
+            }
+        };
     }
 
     private static void scanUrl(final String url, final String name, final String parentUrl, final int depth,
@@ -385,7 +459,7 @@ public final class ConfigRepo {
         node.parentUrl = parentUrl;
         nodes.put(url, node);
         order.add(url);
-        fetchNode(url, new NodeCallback() {
+        fetchNodeFast(url, new NodeCallback() {
             @Override
             public void onSuccess(FetchResult result) {
                 node.type = result.type;
@@ -416,6 +490,10 @@ public final class ConfigRepo {
         new android.os.Handler(android.os.Looper.getMainLooper()).post(new Runnable() {
             @Override
             public void run() {
+                if (PENDING_SUMMARY[0] != null) {
+                    PENDING_SUMMARY[0].run(); // 全树总结日志（排查用，验证后移除）
+                    PENDING_SUMMARY[0] = null;
+                }
                 callback.onDone(nodes, order);
             }
         });
@@ -428,6 +506,73 @@ public final class ConfigRepo {
         if (SECTION_DRAMAS.equals(section)) return 2;
         if (SECTION_MUSICS.equals(section)) return 3;
         return null;
+    }
+
+    /** 模块类型名称（0=点播 1=直播 2=短剧 3=音乐），弹窗与推送提示共用。 */
+    public static final String[] TYPE_NAMES = {"点播", "直播", "短剧", "音乐"};
+
+    /** 各模块地址 Hawk 键（点播/直播/短剧/音乐），模块键是「是否配置」的唯一真源。 */
+    public static String moduleHawkKey(int type) {
+        switch (type) {
+            case 1:
+                return HawkConfig.LIVE_API_URL;
+            case 2:
+                return HawkConfig.DRAMA_CONFIG_URL;
+            case 3:
+                return HawkConfig.MUSIC_CONFIG_URL;
+            case 0:
+            default:
+                return HawkConfig.API_URL;
+        }
+    }
+
+    /** 各模块地址写入（不含重载）：设置页按 rememberUrlName 的名称展示。 */
+    public static void writeModuleSource(int type, String name, String url) {
+        rememberUrlName(url, name); // 设置页按名称显示（线路 url ≠ 配置 url 时也能显示名）
+        switch (type) {
+            case 1:
+                Hawk.put(HawkConfig.LIVE_API_URL, url);
+                HistoryHelper.setLiveApiHistory(url);
+                break;
+            case 2:
+                Hawk.put(HawkConfig.DRAMA_CONFIG_URL, url);
+                break;
+            case 3:
+                Hawk.put(HawkConfig.MUSIC_CONFIG_URL, url);
+                break;
+            case 0:
+            default:
+                Hawk.put(HawkConfig.API_URL, url);
+                setActiveUrl(url);
+                HistoryHelper.setApiHistory(url);
+                break;
+        }
+    }
+
+    /**
+     * 自动应用未设置模块（推送自动应用共享核心，TV 弹窗与扫码推送共用）：
+     * 四个模块逐个检查——键为空 → 取路由表中该类型第一行（行序=树扫描序）写入；已设置不覆盖；
+     * 该配置不含对应类型 → 模块不动。返回已应用的类型名称列表（供提示语）。
+     */
+    public static List<String> applyUnsetModules(String configUrl) {
+        SourceViewModel.clearRuntimeCache();
+        List<String> applied = new ArrayList<>();
+        List<ConfigRoute> rows = AppDataManager.get().getConfigRouteDao().getByConfigUrl(configUrl);
+        for (int type = 0; type < TYPE_NAMES.length; type++) {
+            String current = Hawk.get(moduleHawkKey(type), "");
+            if (current != null && !current.isEmpty()) continue; // 已设置：不覆盖
+            ConfigRoute hit = null;
+            for (ConfigRoute row : rows) {
+                if (row.type == type) {
+                    hit = row;
+                    break;
+                }
+            }
+            if (hit == null) continue; // 该配置不含此类型：模块不动
+            writeModuleSource(type, hit.lineName, hit.lineUrl);
+            applied.add(TYPE_NAMES[type]);
+        }
+        return applied;
     }
 
     /**

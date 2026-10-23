@@ -26,6 +26,7 @@ public class HistoryAdapter extends BaseQuickAdapter<VodInfo, BaseViewHolder> {
 
     @Override
     protected void convert(BaseViewHolder helper, VodInfo item) {
+        com.github.gcd888.guoju.ui.tv.focus.FocusScaleHelper.bind(helper.itemView, com.github.gcd888.guoju.ui.tv.focus.FocusScaleHelper.POSTER_SCALE);
         FrameLayout tvDel = helper.getView(R.id.delFrameLayout);
         tvDel.setVisibility(HawkConfig.hotVodDelete ? View.VISIBLE : View.GONE);
 

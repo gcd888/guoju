@@ -6,18 +6,12 @@ import android.content.Intent;
 import android.os.Bundle;
 import android.text.TextUtils;
 
-import com.github.gcd888.guoju.event.RefreshEvent;
 import com.github.gcd888.guoju.receiver.PushReceiver;
 import com.github.gcd888.guoju.receiver.SearchReceiver;
 import com.github.gcd888.guoju.util.HawkConfig;
-import com.github.gcd888.guoju.util.HistoryHelper;
 import com.orhanobut.hawk.Hawk;
 
-import org.greenrobot.eventbus.EventBus;
-
 import java.io.IOException;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 import tv.danmaku.ijk.media.player.IjkMediaPlayer;
 
@@ -82,23 +76,8 @@ public class ControlManager {
                 }
 
                 @Override
-                public void onApiReceived(String url) {
-                    EventBus.getDefault().post(new RefreshEvent(RefreshEvent.TYPE_API_URL_CHANGE, url));
-                }
-
-                @Override
-                public void onLiveApiReceived(String url) {
-                    if (!TextUtils.isEmpty(url)) {
-                        Hawk.put(HawkConfig.LIVE_API_URL, url);
-                        HistoryHelper.setLiveApiHistory(url);
-                    }
-                    EventBus.getDefault().post(new RefreshEvent(RefreshEvent.TYPE_LIVE_API_URL_CHANGE, url));
-                }
-
-                @Override
-                public void onDanmuApiReceived(String url) {
-                    Hawk.put(HawkConfig.DANMU_API, TextUtils.isEmpty(url) ? "" : url);
-                    EventBus.getDefault().post(new RefreshEvent(RefreshEvent.TYPE_SET_DANMU_SETTINGS, false));
+                public void onConfigPushed(String name, String url) {
+                    ConfigPushHandler.handle(mContext, name, url);
                 }
 
                 @Override

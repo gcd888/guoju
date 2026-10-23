@@ -246,8 +246,10 @@ public class GridFragment extends BaseLazyFragment implements HomeGridPage {
             @Override
             public boolean onInBorderKeyEvent(int direction, View focused) {
                 if (direction == View.FOCUS_UP) {
-                    // 二级全屏网格第一行按上键回 tab 行（焦点停在当前 tab，可右键切换/下键再进网格）
+                    // 网格第一行按上键回 tab 行（焦点停在当前 tab）；必须消费上键：
+                    // 放行会让系统 FocusFinder 跨过 tab 行飞到 Hero 剧名
                     HomeActivity.focusTabRow();
+                    return true;
                 }
                 return false;
             }

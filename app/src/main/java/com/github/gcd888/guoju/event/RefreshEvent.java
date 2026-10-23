@@ -27,6 +27,10 @@ public class RefreshEvent {
     public static final int TYPE_PLAY_QUALITY = 20;
     /** 设置-首页多行开关变化：主页货架/Hero 文字区即时重排（HomeTabFragment.notifyRecStyleChanged）。 */
     public static final int TYPE_HOME_REC_STYLE_CHANGE = 21;
+    /** 扫码推送配置开始（obj=推送的 configUrl）：配置弹窗/大码弹窗显示解析遮罩。 */
+    public static final int TYPE_PUSH_CONFIG_START = 22;
+    /** 扫码推送配置完成（obj=ConfigPushHandler.PushResult）：遮罩消失/大码弹窗关闭/列表刷新。 */
+    public static final int TYPE_PUSH_CONFIG_DONE = 23;
     public int type;
     public Object obj;
 

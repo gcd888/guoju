@@ -196,6 +196,8 @@ public class ApiConfig {
     }
     public void loadConfig(boolean useCache, LoadConfigCallback callback, Activity activity) {
         String apiUrl = Hawk.get(HawkConfig.API_URL, "");
+        long t0 = System.currentTimeMillis();
+        LOG.i("echo-ConfigTiming loadConfig 开始 useCache=" + useCache + " apiUrl=" + apiUrl);
         if (apiUrl.isEmpty()) {
             callback.error("-1");
             return;
@@ -225,6 +227,7 @@ public class ApiConfig {
             public void success(String json) {
                 try {
 //                            LOG.longI("echo-ConfigJson", json);
+                    LOG.i("echo-ConfigTiming 配置下载+解析 总耗时=" + (System.currentTimeMillis() - t0) + "ms");
                     if (switchApiCollectionIfNeeded(apiUrl, json)) {
                         FileUtils.saveCache(cache,json);
                         loadConfig(false, callback, activity);
@@ -268,6 +271,7 @@ public class ApiConfig {
      */
     private void loadDramaConfig(final String mainApiUrl, final LoadConfigCallback callback) {
         final String dramaUrl = Hawk.get(HawkConfig.DRAMA_CONFIG_URL, "");
+        LOG.i("echo-ConfigTiming 短剧配置 dramaUrl=" + dramaUrl + " (与主配置同源则无需二次拉取)");
         if (dramaUrl.isEmpty() || dramaUrl.equals(mainApiUrl)) {
             callback.success();
             return;
@@ -410,6 +414,7 @@ public class ApiConfig {
         configLoadExecutor.execute(new Runnable() {
             @Override
             public void run() {
+                long tNet = System.currentTimeMillis();
                 String result = "";
                 String error = "";
                 okhttp3.Response response = null;
@@ -437,6 +442,8 @@ public class ApiConfig {
                 } finally {
                     if (response != null) closeQuietly(response.body());
                 }
+                LOG.i("echo-ConfigTiming 配置下载 耗时=" + (System.currentTimeMillis() - tNet)
+                        + "ms url=" + requestUrl + (TextUtils.isEmpty(error) ? " 成功" : " 失败:" + error));
                 final String finalResult = result;
                 final String finalError = error;
                 mainHandler.post(new Runnable() {
@@ -566,6 +573,7 @@ public class ApiConfig {
 
     private void loadJar(boolean useCache, String spider, LoadConfigCallback callback, int retryCount) {
         String[] urls = spider.split(";md5;");
+        LOG.i("echo-ConfigTiming loadJar 开始 retry=" + retryCount + " jar=" + urls[0]);
         String jarUrl = urls[0];
         String md5 = urls.length > 1 ? urls[1].trim() : "";
         File cache = new File(App.getInstance().getFilesDir().getAbsolutePath() + "/csp/"+MD5.string2MD5(jarUrl)+".jar");
@@ -1873,6 +1881,13 @@ public class ApiConfig {
             searchSourceBeanList = new ArrayList<>();
             for (SourceBean bean : sourceBeanList.values()) {
                 if (bean.isSearchable()) {
+                    searchSourceBeanList.add(bean);
+                }
+            }
+            // 短剧源并入搜索源集合（与 SearchHelper.getSources 同规则），缺它则
+            // 短剧 tab 下搜索页无短剧源结果
+            for (SourceBean bean : dramaBeanList.values()) {
+                if (bean.isSearchable() && !searchSourceBeanList.contains(bean)) {
                     searchSourceBeanList.add(bean);
                 }
             }

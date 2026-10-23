@@ -33,6 +33,7 @@ public class GridAdapter extends BaseQuickAdapter<Movie.Video, BaseViewHolder> {
 
     @Override
     protected void convert(BaseViewHolder helper, Movie.Video item) {
+        com.github.gcd888.guoju.ui.tv.focus.FocusScaleHelper.bind(helper.itemView, com.github.gcd888.guoju.ui.tv.focus.FocusScaleHelper.POSTER_SCALE);
         if (this.mShowList) {
             helper.setText(R.id.tvNote, item.note);
             helper.setText(R.id.tvName, item.name);

@@ -189,6 +189,39 @@ public class HeroBannerView extends FrameLayout {
      */
     public void refreshFocusPause() {
         applyFocusPause();
+        // hero 整体聚焦缩放（tvOS 观感）：剧名获焦时 hero 全屏图+剧名+剧集信息+简介一起
+        // 放大，失焦整体恢复；全屏图放大边缘出画被屏幕裁剪属预期效果
+        boolean titleFocused = false;
+        View layer = layers[activeLayer];
+        if (layer != null) {
+            View title = layer.findViewById(com.github.gcd888.guoju.R.id.tvHeroTitle);
+            titleFocused = title != null && title.hasFocus();
+        }
+        float target = titleFocused ? 1.05f : 1f;
+        if (getScaleX() != target) {
+            animate().scaleX(target).scaleY(target)
+                    .setDuration(180)
+                    .setInterpolator(new android.view.animation.DecelerateInterpolator())
+                    .start();
+        }
+    }
+
+    /**
+     * 遥控焦点落到当前可见层的剧名（首页纵向链路的一环：顶栏↔剧名↔tab 行）。
+     * 必须取可见层：两层几何叠放，findViewById 命中隐藏层的剧名会不可见获焦。
+     * 无数据/剧名不可见（首页多行模式隐藏信息区）返回 false，由调用方兜底。
+     */
+    public boolean focusTitle() {
+        View layer = layers[activeLayer];
+        if (layer == null) {
+            return false;
+        }
+        View title = layer.findViewById(com.github.gcd888.guoju.R.id.tvHeroTitle);
+        if (title == null || !title.isShown()) {
+            return false;
+        }
+        title.requestFocus();
+        return true;
     }
 
     /** 隐藏层整体退出焦点搜索（自身不可获焦 + 阻断子 view），可见层恢复默认（子 view 优先）。 */

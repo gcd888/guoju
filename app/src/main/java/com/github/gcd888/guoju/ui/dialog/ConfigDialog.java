@@ -5,6 +5,10 @@ import android.content.Intent;
 import android.os.Handler;
 import android.os.Looper;
 import android.text.TextUtils;
+
+import org.greenrobot.eventbus.EventBus;
+import org.greenrobot.eventbus.Subscribe;
+import org.greenrobot.eventbus.ThreadMode;
 import android.view.KeyEvent;
 import android.view.View;
 import android.widget.EditText;
@@ -20,12 +24,13 @@ import com.github.gcd888.guoju.bean.ConfigItem;
 import com.github.gcd888.guoju.bean.ConfigNodeBean;
 import com.github.gcd888.guoju.data.AppDataManager;
 import com.github.gcd888.guoju.data.ConfigRoute;
+import com.github.gcd888.guoju.event.RefreshEvent;
+import com.github.gcd888.guoju.server.ConfigPushHandler;
 import com.github.gcd888.guoju.server.ControlManager;
 import com.github.gcd888.guoju.ui.activity.HomeActivity;
 import com.github.gcd888.guoju.ui.adapter.ConfigAdapter;
 import com.github.gcd888.guoju.ui.tv.QRCodeGen;
 import com.github.gcd888.guoju.util.HawkConfig;
-import com.github.gcd888.guoju.util.HistoryHelper;
 import com.github.gcd888.guoju.viewmodel.SourceViewModel;
 import com.orhanobut.hawk.Hawk;
 import com.owen.tvrecyclerview.widget.TvRecyclerView;
@@ -107,7 +112,6 @@ public class ConfigDialog extends BaseDialog {
     public static final int TYPE_LIVE = 1;
     public static final int TYPE_DRAMA = 2;
     public static final int TYPE_MUSIC = 3;
-    private static final String[] TYPE_NAMES = {"点播", "直播", "短剧", "音乐"};
 
     private final TextView[] tabViews = new TextView[4];
     private int activeType = TYPE_VOD;
@@ -135,6 +139,9 @@ public class ConfigDialog extends BaseDialog {
         this.activeType = (defaultType >= TYPE_VOD && defaultType <= TYPE_MUSIC) ? defaultType : TYPE_VOD;
         setContentView(R.layout.dialog_config);
         setCanceledOnTouchOutside(false);
+        // 订阅扫码推送事件：开始/结束控制解析遮罩（dismiss 时注销，防泄漏）
+        EventBus.getDefault().register(this);
+        setOnDismissListener(dialog -> EventBus.getDefault().unregister(ConfigDialog.this));
 
         tvTip = findViewById(R.id.tvTip);
         etName = findViewById(R.id.etName);
@@ -199,14 +206,32 @@ public class ConfigDialog extends BaseDialog {
         }
     }
 
-    /** 扫码推送区（右上常驻）：生成推送服务二维码 + 展示访问地址，手机扫码即可远程推送配置。 */
+    /** 扫码推送区（右上常驻）：生成推送服务二维码 + 展示访问地址；扫码或点击/确认键弹大码弹窗。 */
     private void initPushQR() {
-        String address = ControlManager.get().getAddress(false);
+        String address = ControlManager.get().getAddress(false) + "config.html";
         TextView tvPushUrl = findViewById(R.id.tvPushUrl);
         tvPushUrl.setText(address);
         ImageView ivQRCode = findViewById(R.id.ivQRCode);
         ivQRCode.setImageBitmap(QRCodeGen.generateBitmap(address,
-                AutoSizeUtils.mm2px(getContext(), 100), AutoSizeUtils.mm2px(getContext(), 100)));
+                AutoSizeUtils.mm2px(getContext(), 80), AutoSizeUtils.mm2px(getContext(), 80), 2));
+        // 点击/确认键弹大码弹窗：大二维码 + 完整地址 + 推送提示
+        findViewById(R.id.flQRCode).setOnClickListener(v -> new QrCodeDialog(getContext(), address).show());
+    }
+
+    /** 扫码推送事件：开始朦胧转圈遮罩；结束隐藏遮罩并刷新左列（自动选中刚推送的配置）。 */
+    @Subscribe(threadMode = ThreadMode.MAIN)
+    public void onPushEvent(RefreshEvent event) {
+        if (event.type == RefreshEvent.TYPE_PUSH_CONFIG_START) {
+            findViewById(R.id.flPushLoading).setVisibility(View.VISIBLE);
+        } else if (event.type == RefreshEvent.TYPE_PUSH_CONFIG_DONE) {
+            findViewById(R.id.flPushLoading).setVisibility(View.GONE);
+            if (event.obj instanceof ConfigPushHandler.PushResult) {
+                ConfigPushHandler.PushResult result = (ConfigPushHandler.PushResult) event.obj;
+                if (result.ok && !TextUtils.isEmpty(result.configUrl)) {
+                    rebuildConfigColumn(result.configUrl); // 左列刷新并选中新推送配置，中/右列渲染路由表
+                }
+            }
+        }
     }
 
     /** 初始化单列列表（布局 + 适配器；点击/长按/删除由各列单独挂接）。 */
@@ -343,27 +368,12 @@ public class ConfigDialog extends BaseDialog {
     }
 
     /**
-     * 推送自动应用（FR-I-07）：四个模块逐个检查——未设置（键为空）→ 取路由表中该类型第一行
-     * （行序=树扫描序，即"树内第一条线路"）写入模块键；已设置不覆盖；该配置不含对应类型 → 模块不动。
+     * 推送自动应用（FR-I-07）：调 ConfigRepo.applyUnsetModules 共享核心——四个模块逐个检查，
+     * 未设置（键为空）→ 取路由表中该类型第一行写入；已设置不覆盖；该配置不含对应类型 → 模块不动。
      * 全部应用后提示并整套重载。
      */
     private void autoApplyFromTable() {
-        SourceViewModel.clearRuntimeCache();
-        List<String> applied = new ArrayList<>();
-        for (int type = TYPE_VOD; type <= TYPE_MUSIC; type++) {
-            String current = Hawk.get(hawkKey(type), "");
-            if (current != null && !current.isEmpty()) continue; // 已设置：不覆盖
-            ConfigRoute hit = null;
-            for (ConfigRoute row : routeRows) {
-                if (row.type == type) {
-                    hit = row;
-                    break;
-                }
-            }
-            if (hit == null) continue; // 该配置不含此类型：模块不动
-            writeModuleSource(type, hit.lineName, hit.lineUrl);
-            applied.add(TYPE_NAMES[type]);
-        }
+        List<String> applied = ConfigRepo.applyUnsetModules(Sel.config());
         if (applied.isEmpty()) {
             updateTip();
             return;
@@ -377,7 +387,7 @@ public class ConfigDialog extends BaseDialog {
 
     /** 状态栏：当前类别 + 三列条数概览；配置为空时提示推送入口。 */
     private void updateTip() {
-        String prefix = TYPE_NAMES[activeType];
+        String prefix = ConfigRepo.TYPE_NAMES[activeType];
         if (configNodes.isEmpty()) {
             tvTip.setText(prefix + " · 暂无配置，在下方输入链接推送");
             return;
@@ -640,11 +650,11 @@ public class ConfigDialog extends BaseDialog {
      */
     private void applyLine(final ConfigNodeBean node) {
         final int type = activeType;
-        if (node.url.equals(Hawk.get(hawkKey(type), ""))) {
+        if (node.url.equals(Hawk.get(ConfigRepo.moduleHawkKey(type), ""))) {
             dismiss();
             return;
         }
-        new TipDialog(getContext(), "将「" + node.name + "」设为" + TYPE_NAMES[type] + "源并重载配置？", "取消", "确定",
+        new TipDialog(getContext(), "将「" + node.name + "」设为" + ConfigRepo.TYPE_NAMES[type] + "源并重载配置？", "取消", "确定",
                 new TipDialog.OnListener() {
                     @Override
                     public void left() {
@@ -661,50 +671,12 @@ public class ConfigDialog extends BaseDialog {
                 }).show();
     }
 
-    /** 各模块地址键（点播/直播/短剧/音乐）。 */
-    private static String hawkKey(int type) {
-        switch (type) {
-            case TYPE_LIVE:
-                return HawkConfig.LIVE_API_URL;
-            case TYPE_DRAMA:
-                return HawkConfig.DRAMA_CONFIG_URL;
-            case TYPE_MUSIC:
-                return HawkConfig.MUSIC_CONFIG_URL;
-            case TYPE_VOD:
-            default:
-                return HawkConfig.API_URL;
-        }
-    }
-
     /** 激活线路（手动）：写入对应模块的地址（点播另记生效源与历史，直播记直播历史）后整套重载。 */
     private void applyModuleSource(int type, ConfigNodeBean node) {
         SourceViewModel.clearRuntimeCache();
-        writeModuleSource(type, node.name, node.url);
+        ConfigRepo.writeModuleSource(type, node.name, node.url);
         dismiss();
         reloadHome();
-    }
-
-    /** 各模块地址写入（不含重载）：设置页按 rememberUrlName 的名称展示。 */
-    private void writeModuleSource(int type, String name, String url) {
-        ConfigRepo.rememberUrlName(url, name); // 设置页按名称显示（线路 url ≠ 配置 url 时也能显示名）
-        switch (type) {
-            case TYPE_LIVE:
-                Hawk.put(HawkConfig.LIVE_API_URL, url);
-                HistoryHelper.setLiveApiHistory(url);
-                break;
-            case TYPE_DRAMA:
-                Hawk.put(HawkConfig.DRAMA_CONFIG_URL, url);
-                break;
-            case TYPE_MUSIC:
-                Hawk.put(HawkConfig.MUSIC_CONFIG_URL, url);
-                break;
-            case TYPE_VOD:
-            default:
-                Hawk.put(HawkConfig.API_URL, url);
-                ConfigRepo.setActiveUrl(url);
-                HistoryHelper.setApiHistory(url);
-                break;
-        }
     }
 
     /** 整套配置重载：重建 HomeActivity（useCache=false 全量 loadConfig）。 */

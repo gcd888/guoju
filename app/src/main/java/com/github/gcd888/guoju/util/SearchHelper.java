@@ -82,6 +82,14 @@ public class SearchHelper {
             }
             mCheckSources.put(bean.getKey(), "1");
         }
+        // 短剧源（独立 drama 配置，如红果短剧）同样参与搜索——此前只并入点播 sites，
+        // 导致短剧 tab 下搜索页没有短剧源结果
+        for (SourceBean bean : ApiConfig.get().getDramaBeanList().values()) {
+            if (!bean.isSearchable() || mCheckSources.containsKey(bean.getKey())) {
+                continue;
+            }
+            mCheckSources.put(bean.getKey(), "1");
+        }
         return mCheckSources;
     }
 

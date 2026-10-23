@@ -40,6 +40,6 @@
         android:layout_marginTop="@dimen/vs_6"
         android:ellipsize="end"
         android:maxLines="1"
-        android:textColor="@color/atv_text_secondary"
+        android:textColor="@color/poster_title_color"
         android:textSize="@dimen/ts_20" />
 </LinearLayout>

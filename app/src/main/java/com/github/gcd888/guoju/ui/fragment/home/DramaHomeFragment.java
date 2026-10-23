@@ -164,7 +164,9 @@ public class DramaHomeFragment extends HomeTabFragment {
             @Override
             public boolean onInBorderKeyEvent(int direction, View focused) {
                 if (direction == View.FOCUS_UP) {
+                    // 必须消费上键：放行会让系统 FocusFinder 跨过 tab 行飞到 Hero 剧名
                     HomeActivity.focusTabRow();
+                    return true;
                 }
                 return false;
             }
@@ -266,6 +268,8 @@ public class DramaHomeFragment extends HomeTabFragment {
                 LogWriter.i(TAG + ": hero bind[" + position + "] " + item.name);
                 // 片名获/失焦：同步轮播暂停态 + 缩放表达焦点（与点播同款）
                 tvTitle.setOnFocusChangeListener((v, hasFocus) -> { heroBanner.refreshFocusPause(); com.github.gcd888.guoju.util.HeroInfoLayout.applyTitleFocus(v, hasFocus); });
+                // 片名纵向焦点接管：上键→顶栏、下键→tab 行（首页纵向链路中间一环）
+                bindHeroTitleNavKeys(tvTitle);
                 // 片名可点击（遥控 OK）：与货架点击同逻辑（已配置短剧源跳快速搜索，零配置提示）
                 tvTitle.setOnClickListener(v -> jumpDetail(item));
             }

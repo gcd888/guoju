@@ -41,16 +41,11 @@ public class InputRequestProcess implements RequestProcess {
                             mDataReceiver.onTextReceived(params.get("word").trim());
                             break;
                         }
-                        case "api": {
-                            mDataReceiver.onApiReceived(params.get("url").trim());
-                            break;
-                        }
-                        case "liveApi": {
-                            mDataReceiver.onLiveApiReceived(params.get("url").trim());
-                            break;
-                        }
-                        case "danmuApi": {
-                            mDataReceiver.onDanmuApiReceived(params.get("url").trim());
+                        case "pushConfig": {
+                            String url = params.get("url");
+                            if (url != null && url.trim().length() > 0) {
+                                mDataReceiver.onConfigPushed(params.get("name"), url.trim());
+                            }
                             break;
                         }
                         case "push": {

@@ -23,6 +23,7 @@
         android:layout_height="wrap_content"
         android:clipChildren="false"
         android:clipToPadding="false"
+        android:descendantFocusability="afterDescendants"
         android:paddingLeft="@dimen/atv_safe_side"
         android:paddingRight="@dimen/atv_safe_side"
         android:translationY="@dimen/atv_hero_h"

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 分类 tab 筛选图标颜色：焦点态白底上图标转深色，常态白色（仅 tvFilter 使用）。 -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:color="#FF141414" android:state_focused="true" />
+    <item android:color="#FFFFFFFF" />
+</selector>

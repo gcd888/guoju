@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 分类 tab 文字颜色：焦点（描边透明底）白字，常态灰白 -->
+<!-- 分类 tab 文字颜色：焦点（白底圆角块）深色字，常态灰白。仅 item_home_sort 引用。 -->
 <selector xmlns:android="http://schemas.android.com/apk/res/android">
-    <item android:color="#FFFFFFFF" android:state_focused="true" />
+    <item android:color="#FF141414" android:state_focused="true" />
     <item android:color="@color/atv_text_secondary" />
 </selector>

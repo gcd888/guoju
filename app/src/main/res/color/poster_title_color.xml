@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 海报卡标题：焦点（放大+抬升）时变白强化，常态灰白。item_grid/view_poster_card 共用。 -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:color="#FFFFFFFF" android:state_focused="true" />
+    <item android:color="@color/atv_text_secondary" />
+</selector>

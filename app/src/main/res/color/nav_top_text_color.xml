@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    顶部导航文字颜色（配 button_home_sort_focus 白底焦点块）：
+    焦点=深色字（白底黑字，方案 A）；选中（当前主页类型）白字；常态灰白。
+    注意：与 nav_text_color 分开——config 弹窗类别 Tab 蓝底焦点仍需白字，不能共用。
+-->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:color="#FF141414" android:state_focused="true" />
+    <item android:color="#FFFFFFFF" android:state_selected="true" />
+    <item android:color="@color/atv_text_secondary" />
+</selector>

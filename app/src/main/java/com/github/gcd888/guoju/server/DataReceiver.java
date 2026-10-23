@@ -12,12 +12,8 @@ public interface DataReceiver {
      */
     void onTextReceived(String text);
 
-
-    void onApiReceived(String url);
-
-    void onLiveApiReceived(String url);
-
-    void onDanmuApiReceived(String url);
+    /** 扫码推送配置（name 可空，TV 端自动命名；url 自动判型扫描落库）。 */
+    void onConfigPushed(String name, String url);
 
     void onPushReceived(String url);
 }

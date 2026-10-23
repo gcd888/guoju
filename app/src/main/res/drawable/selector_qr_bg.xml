@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 二维码容器背景：白色圆角衬底形成边框；TV 获焦态加高亮描边 -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_focused="true">
+        <shape>
+            <corners android:radius="@dimen/vs_5" />
+            <solid android:color="#FFFFFF" />
+            <stroke android:width="@dimen/vs_2" android:color="#FF0A84FF" />
+        </shape>
+    </item>
+    <item android:state_focused="false">
+        <shape>
+            <corners android:radius="@dimen/vs_5" />
+            <solid android:color="#FFFFFF" />
+        </shape>
+    </item>
+</selector>

@@ -4,7 +4,7 @@
      主页对应项由代码隐藏，始终 7 槽可见、weight 等分 → 间距一致；
      home 图标同样槽内居中（fitCenter）——fitStart 会让图标贴左缘，与居中的文字 tab
      视觉间距不均（Home 与右邻 tab 隔半个槽位显得过宽）。
-     焦点态与底部分类 tab 一致：透明底 + 文字变白（button_home_sort_focus/tab_text_color）。
+     焦点态与底部分类 tab 一致：白底圆角块 + 深色文字（button_home_sort_focus/nav_top_text_color）。
      高度由代码按字号动态设置（字高 em × 1.4），atv_nav_h 仅为初始占位值。 -->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/topLayout"
@@ -29,7 +29,8 @@
             android:contentDescription="首页"
             android:focusable="true"
             android:scaleType="fitCenter"
-            android:src="@drawable/icon_home" />
+            android:src="@drawable/icon_home"
+            android:tint="@color/tab_icon_color" />
 
         <TextView
             android:id="@+id/tvName"
@@ -57,7 +58,7 @@
             android:focusable="true"
             android:gravity="center"
             android:text="点播"
-            android:textColor="@color/nav_text_color"
+            android:textColor="@color/nav_top_text_color"
             android:textSize="@dimen/ts_nav" />
 
         <TextView
@@ -81,7 +82,7 @@
             android:focusable="true"
             android:gravity="center"
             android:text="短剧"
-            android:textColor="@color/nav_text_color"
+            android:textColor="@color/nav_top_text_color"
             android:textSize="@dimen/ts_nav" />
 
         <TextView

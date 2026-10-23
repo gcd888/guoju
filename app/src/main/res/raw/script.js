@@ -2,20 +2,38 @@ function search() {
     doAction('search', { word: $('#search_key_word').val() });
 }
 
-function api() {
-    doAction('api', { url: $('#diy_api_url').val() });
-}
-
-function liveApi() {
-    doAction('liveApi', { url: $('#diy_live_api_url').val() });
-}
-
-function danmuApi() {
-    doAction('danmuApi', { url: $('#diy_danmu_api_url').val() });
-}
-
 function push() {
     doAction('push', { url: $('#push_url').val() });
+}
+
+function pushConfig() {
+    let url = $('#config_url').val().trim();
+    if (!url) {
+        warnToast('请输入配置链接');
+        return false;
+    }
+    doAction('pushConfig', { name: $('#config_name').val().trim(), url: url });
+    okToast('已推送，电视端检测中…');
+    $('#config_url').val('');
+    return false;
+}
+
+function pushFileAsConfig(type) {
+    if (!current_file) {
+        warnToast('请先选择文件');
+        return false;
+    }
+    let url;
+    if (type === 1) {
+        url = "clan://localhost/" + current_file;
+    } else {
+        url = current_remote + current_file;
+    }
+    let name = current_file.replace(/^.*\//, '').replace(/\.[^.]*$/, '');
+    doAction('pushConfig', { name: name, url: url });
+    hideFileInfo();
+    okToast('已推送，电视端检测中…');
+    return false;
 }
 
 function doAction(action, kv) {
@@ -89,16 +107,6 @@ function selectFile(path, canDel) {
     $("#fileInfoDialog").show();
 }
 
-function fileToApi(type, live) {
-    var url;
-    if (type === 1) {
-        url = "clan://localhost/" + current_file;
-    } else {
-        url = current_remote + current_file;
-    }
-    doAction(live ? 'liveApi' : 'api', { url: url });
-}
-
 function hideFileInfo() {
     $("#fileInfoDialog").hide();
 }
@@ -142,6 +150,14 @@ function warnToast(msg) {
     setTimeout(() => {
         $('#warnToast').hide();
     }, 1000);
+}
+
+function okToast(msg) {
+    $('#okToastContent').html(msg);
+    $('#okToast').show();
+    setTimeout(() => {
+        $('#okToast').hide();
+    }, 2000);
 }
 
 function uploadFile() {
@@ -275,9 +291,7 @@ $(function () {
 var url = window.location.href;
 if (url.indexOf('push.html') > 0)
     showPanel(2);
-else if (url.indexOf('api.html') > 0)
-    showPanel(3);
-else if (url.indexOf('all.html') > 0)
+else if (url.indexOf('config.html') > 0)
     showPanel(3);
 else
     showPanel(1);

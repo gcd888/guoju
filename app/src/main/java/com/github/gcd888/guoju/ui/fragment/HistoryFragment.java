@@ -113,8 +113,9 @@ public class HistoryFragment extends BaseLazyFragment implements HomeGridPage {
             @Override
             public boolean onInBorderKeyEvent(int direction, View focused) {
                 if (direction == View.FOCUS_UP) {
-                    // 二级全屏网格第一行按上键回 tab 行（焦点停在当前 tab，可右键切换/下键再进网格）
+                    // 网格第一行按上键回 tab 行；必须消费上键，防系统搜索跨层跳级
                     HomeActivity.focusTabRow();
+                    return true;
                 }
                 return false;
             }

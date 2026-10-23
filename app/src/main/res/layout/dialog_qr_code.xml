@@ -1,0 +1,104 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 推送配置二维码弹窗：大二维码（白底衬框）+ 完整地址 + 推送提示；右上角 X 关闭（默认聚焦） -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <LinearLayout
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:background="@drawable/shape_danmu_setting_bg"
+        android:orientation="vertical"
+        android:padding="@dimen/vs_30">
+
+        <!-- 右上角关闭 X：默认聚焦，遥控器确认键直接关闭弹窗 -->
+        <ImageView
+            android:id="@+id/ivClose"
+            android:layout_width="@dimen/vs_40"
+            android:layout_height="@dimen/vs_40"
+            android:layout_gravity="end"
+            android:focusable="true"
+            android:src="@drawable/icon_close" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:text="推送配置"
+            android:textColor="@color/dialog_text_primary"
+            android:textSize="@dimen/ts_26"
+            android:textStyle="bold" />
+
+        <!-- 白色衬底大二维码 -->
+        <FrameLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:layout_marginTop="@dimen/vs_15"
+            android:background="@drawable/selector_qr_bg"
+            android:padding="@dimen/vs_5">
+
+            <ImageView
+                android:id="@+id/ivQRCode"
+                android:layout_width="@dimen/vs_240"
+                android:layout_height="@dimen/vs_240"
+                android:scaleType="fitXY" />
+        </FrameLayout>
+
+        <TextView
+            android:id="@+id/tvAddress"
+            android:layout_width="@dimen/vs_340"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:layout_marginTop="@dimen/vs_15"
+            android:gravity="center"
+            android:lineSpacingMultiplier="1.5"
+            android:textColor="@color/dialog_text_primary"
+            android:textSize="@dimen/ts_24"
+            tools:text="http://192.168.1.100:9978/config.html" />
+
+        <TextView
+            android:layout_width="@dimen/vs_340"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:layout_marginTop="@dimen/vs_10"
+            android:gravity="center"
+            android:lineSpacingMultiplier="1.4"
+            android:text="手机扫码，远程推送配置\n支持点播/直播/短剧/音乐/多仓配置链接，电视端自动识别并应用"
+            android:textColor="@color/atv_text_secondary"
+            android:textSize="@dimen/ts_20" />
+    </LinearLayout>
+
+    <!-- 扫码推送解析遮罩：推送开始时朦胧转圈，完成后整个弹窗自动关闭 -->
+    <FrameLayout
+        android:id="@+id/flPushLoading"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="#B3000000"
+        android:clickable="true"
+        android:focusable="true"
+        android:visibility="gone">
+
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:gravity="center"
+            android:orientation="vertical">
+
+            <ProgressBar
+                android:layout_width="@dimen/vs_60"
+                android:layout_height="@dimen/vs_60" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/vs_15"
+                android:text="正在解析中，请耐心等候"
+                android:textColor="@color/dialog_text_primary"
+                android:textSize="@dimen/ts_22" />
+        </LinearLayout>
+    </FrameLayout>
+</FrameLayout>

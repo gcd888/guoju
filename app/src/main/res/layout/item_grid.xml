@@ -64,9 +64,9 @@
             android:shadowDy="2"
             android:shadowRadius="4"
             android:singleLine="true"
-            android:textColor="@color/atv_text_secondary"
-            android:textSize="@dimen/ts_18"
-            android:visibility="gone" />
+        android:textColor="@color/poster_title_color"
+        android:textSize="@dimen/ts_18"
+        android:visibility="gone" />
 
         <FrameLayout
             android:id="@+id/delFrameLayout"
@@ -92,7 +92,7 @@
         android:layout_marginTop="@dimen/vs_6"
         android:ellipsize="end"
         android:maxLines="1"
-        android:textColor="@color/atv_text_secondary"
+        android:textColor="@color/poster_title_color"
         android:textSize="@dimen/ts_20" />
 
     <TextView

@@ -26,7 +26,7 @@ public class HomeHotVodAdapter extends BaseQuickAdapter<Movie.Video, BaseViewHol
 
     @Override
     protected void convert(BaseViewHolder helper, Movie.Video item) {
-        FocusScaleHelper.bind(helper.itemView);
+        FocusScaleHelper.bind(helper.itemView, FocusScaleHelper.POSTER_SCALE);
         FrameLayout tvDel = helper.getView(R.id.delFrameLayout);
         tvDel.setVisibility(HawkConfig.hotVodDelete ? View.VISIBLE : View.GONE);
 

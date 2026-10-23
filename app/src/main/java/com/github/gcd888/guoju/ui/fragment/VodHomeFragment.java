@@ -200,6 +200,8 @@ public class VodHomeFragment extends HomeTabFragment {
             LogWriter.i("hero bind[" + position + "] " + item.name + " meta=[" + meta + "] descLen=" + desc.length());
             // 片名获/失焦：同步轮播暂停态（焦点停在片名上轮播停住，移出 Hero 恢复）+ 缩放表达焦点
             tvTitle.setOnFocusChangeListener((v, hasFocus) -> { heroBanner.refreshFocusPause(); com.github.gcd888.guoju.util.HeroInfoLayout.applyTitleFocus(v, hasFocus); });
+            // 片名纵向焦点接管：上键→顶栏、下键→tab 行（首页纵向链路中间一环）
+            bindHeroTitleNavKeys(tvTitle);
             // 仅片名可点击（遥控 OK 键）：跳转搜索页并携带剧名自动搜索；整图不再响应点击
             tvTitle.setOnClickListener(v -> jumpSearch(item));
         }

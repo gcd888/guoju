@@ -349,9 +349,14 @@ public class HomeActivity extends BaseActivity {
 
         this.mGridView.setOnInBorderKeyEventListener(new TvRecyclerView.OnInBorderKeyEventListener() {
             public boolean onInBorderKeyEvent(int direction, View view) {
-                // 顶部导航栏接收上边界焦点，不再拦截刷新
+                // 上边界：优先落当前主页的 Hero 剧名（视觉紧邻 tab 行上方），
+                // 无 Hero（非主页 tab/多行模式/无数据）时显式交给顶部导航栏——
+                // 全程不依赖系统 FocusFinder 跨层搜索（真机上会丢焦，顶栏选不中）
                 if (direction == View.FOCUS_UP) {
-                    return false;
+                    if (!gridExpanded && topHide == 0 && focusHeroTitle()) {
+                        return true;
+                    }
+                    return focusTopNavFromTab(view);
                 }
                 if (direction != View.FOCUS_DOWN) {
                     return false;
@@ -368,10 +373,37 @@ public class HomeActivity extends BaseActivity {
                     return false;
                 }
                 BaseLazyFragment baseLazyFragment = fragments.get(sortFocused);
-                if (!(baseLazyFragment instanceof HomeGridPage)) {
-                    return false;
+                if (baseLazyFragment instanceof HomeTabFragment) {
+                    // 一级态下键显式落第一个货架（与网格上键回 tab 行成对，不放行系统搜索）
+                    ((HomeTabFragment) baseLazyFragment).focusFirstShelf();
+                    return true;
                 }
-                return !((HomeGridPage) baseLazyFragment).isLoad();
+                if (baseLazyFragment instanceof HomeGridPage) {
+                    return !((HomeGridPage) baseLazyFragment).isLoad();
+                }
+                return false;
+            }
+        });
+        // tab 项上键显式接管（TV 模拟器实测）：TvRecyclerView 的边界事件只在系统
+        // FocusFinder 搜索失败时回调——tab 行上方系统光束能命中 Hero 剧名，listener
+        // 拿不到机会，焦点直接飞剧名（应到顶栏）。必须在 item 层拦截 UP 键
+        this.mGridView.addOnChildAttachStateChangeListener(new RecyclerView.OnChildAttachStateChangeListener() {
+            @Override
+            public void onChildViewAttachedToWindow(@androidx.annotation.NonNull View view) {
+                view.setOnKeyListener(new View.OnKeyListener() {
+                    @Override
+                    public boolean onKey(View v, int keyCode, android.view.KeyEvent event) {
+                        if (keyCode == android.view.KeyEvent.KEYCODE_DPAD_UP
+                                && event.getAction() == android.view.KeyEvent.ACTION_DOWN) {
+                            return focusTopNavFromTab(v);
+                        }
+                        return false;
+                    }
+                });
+            }
+
+            @Override
+            public void onChildViewDetachedFromWindow(@androidx.annotation.NonNull View view) {
             }
         });
         tvName.setOnClickListener(new View.OnClickListener() {
@@ -491,7 +523,21 @@ public class HomeActivity extends BaseActivity {
         for (int navId : navIds) {
             View nav = findViewById(navId);
             nav.setOnClickListener(listener);
-            FocusScaleHelper.bind(nav);
+            // 下边界：优先落当前主页 Hero 剧名（顶栏正下方），无 Hero 时走系统搜索
+            // 由 nextFocusDownId 兜底到 tab 行（非主页 tab/多行模式/无数据）
+            nav.setOnKeyListener(new View.OnKeyListener() {
+                @Override
+                public boolean onKey(View v, int keyCode, android.view.KeyEvent event) {
+                    if (keyCode == android.view.KeyEvent.KEYCODE_DPAD_DOWN
+                            && event.getAction() == android.view.KeyEvent.ACTION_DOWN) {
+                        return focusHeroTitle();
+                    }
+                    return false;
+                }
+            });
+            nav.setNextFocusDownId(R.id.mGridView);
+            // 不绑 FocusScaleHelper 缩放：白底圆角块已足够醒目，且缩放溢出会被顶栏容器
+            // 裁掉——最左 home/最右设置两端白块出现"缺边"（中间项溢出落在邻槽不裁）
         }
         // 站源切换入口：长按 Home 图标。必须无条件消费长按（showSiteSwitch 内部自带
         // 未就绪保护）；若返回 false，抬起时会触发单击跳转主页Tab，长按形同失效。
@@ -579,15 +625,11 @@ public class HomeActivity extends BaseActivity {
         if (navVod != null) navVod.setSelected(homeType == HOME_TYPE_VOD);
         if (navDrama != null) navDrama.setSelected(homeType == HOME_TYPE_DRAMA);
         if (navMusic != null) navMusic.setSelected(homeType == HOME_TYPE_MUSIC);
-        // Home 图标：处于用户设置的主页 → 白色填充；处于其他内容 tab → 白色描边、内部透明
+        // Home 图标：固定填充版（描边版 icon_home_outline 弃用，样式统一）；
+        // 焦点态白底黑图标由 nav_top_bar.xml 的 tab_icon_color tint 表达，代码不再切换/染色
         ImageView navHome = findViewById(R.id.navHome);
         if (navHome != null) {
-            int homeSetting = HawkConfig.getHomePage();
-            boolean atHome = (homeSetting == 0 && homeType == HOME_TYPE_VOD)
-                    || (homeSetting == 2 && homeType == HOME_TYPE_DRAMA)
-                    || (homeSetting == 3 && homeType == HOME_TYPE_MUSIC);
-            navHome.setImageResource(atHome ? R.drawable.icon_home : R.drawable.icon_home_outline);
-            navHome.setColorFilter(null); // 清掉历史染色，避免描边/填充被误染
+            navHome.setImageResource(R.drawable.icon_home);
         }
     }
 
@@ -1438,21 +1480,85 @@ public class HomeActivity extends BaseActivity {
         });
     }
 
-    /** 二级态：tab 行获焦（当前 tab 选中效果），网格第一行上键回到 tab 行。 */
+    /**
+     * 网格第一行上键回 tab 行（焦点停在当前 sortFocused tab）。
+     * 不区分 gridExpanded——短剧/音乐主页的网格叠加层、分类页一级网格同样需要回 tab 行；
+     * 调用方必须消费上键（return true），否则系统 FocusFinder 会跨过 tab 行
+     * 命中正上方的 Hero 剧名，造成链路跳级。
+     */
     public static void focusTabRow() {
         final HomeActivity act = instance;
-        if (act == null || !act.gridExpanded) {
+        if (act == null) {
             return;
         }
         act.mGridView.post(new Runnable() {
             @Override
             public void run() {
-                if (act.gridExpanded) {
-                    act.mGridView.setSelection(act.sortFocused);
-                    act.mGridView.requestFocus();
-                }
+                act.mGridView.setSelection(act.sortFocused);
+                act.mGridView.requestFocus();
             }
         });
+    }
+
+    /**
+     * 遥控焦点落到当前显示主页的 Hero 剧名（顶栏↔剧名↔tab 行纵向链路的一环）。
+     * 非主页 tab（历史/收藏/分类）或无 Hero 返回 false，由调用方兜底。
+     */
+    public boolean focusHeroTitle() {
+        if (mViewPager == null || fragments == null
+                || mViewPager.getCurrentItem() >= fragments.size()) {
+            return false;
+        }
+        BaseLazyFragment f = fragments.get(mViewPager.getCurrentItem());
+        return f instanceof HomeTabFragment && ((HomeTabFragment) f).focusHeroTitle();
+    }
+
+    /**
+     * tab 行上边界 → 顶部导航栏：显式焦点移交，不赌系统 FocusFinder。
+     * 选 x 中心最近的可见导航项（顶栏与 tab 行都是横向均布，x 对齐即视觉对应）；
+     * 二级态/顶栏动画收起中直接消费上键（顶栏隐形，焦点留在吸顶 tab 行）。
+     */
+    public boolean focusTopNavFromTab(View focused) {
+        if (gridExpanded || topHide != 0) {
+            // 二级态顶栏已收起（alpha=0 但 view 仍 VISIBLE，系统搜索会把焦点飞到隐形顶栏）——
+            // 直接消费上键，焦点留在吸顶 tab 行
+            return true;
+        }
+        if (focused == null) {
+            return false;
+        }
+        int[] tabLoc = new int[2];
+        focused.getLocationOnScreen(tabLoc);
+        if (tabLoc[1] <= 0) {
+            // tab 行还没量到屏幕坐标（首帧/动画中），交回系统搜索
+            return false;
+        }
+        int tabCenterX = tabLoc[0] + focused.getWidth() / 2;
+        int[] ids = {R.id.navHome, R.id.navVod, R.id.navLive, R.id.navDrama, R.id.navMusic,
+                R.id.navSearch, R.id.navPush, R.id.navSetting};
+        View best = null;
+        int bestDist = Integer.MAX_VALUE;
+        for (int id : ids) {
+            View nav = findViewById(id);
+            if (nav == null || nav.getVisibility() != View.VISIBLE || nav.getHeight() <= 0) {
+                continue;
+            }
+            int[] loc = new int[2];
+            nav.getLocationOnScreen(loc);
+            if (loc[1] + nav.getHeight() <= 0) {
+                continue; // 顶栏已移出屏幕
+            }
+            int dist = Math.abs(loc[0] + nav.getWidth() / 2 - tabCenterX);
+            if (dist < bestDist) {
+                bestDist = dist;
+                best = nav;
+            }
+        }
+        if (best != null) {
+            best.requestFocus();
+            return true;
+        }
+        return false;
     }
 
     /** 二级态：tab 行下键进入当前 tab 的全屏网格（分类/历史/收藏页或推荐叠加层）。 */
@@ -1513,6 +1619,41 @@ public class HomeActivity extends BaseActivity {
     private static final long LONG_PRESS_THRESHOLD = 2000; // 设置长按的阈值，单位是毫秒
     @Override
     public boolean dispatchKeyEvent(KeyEvent event) {
+        // 遥控焦点丢失兜底：方向键按下时若当前无焦点 view（焦点意外飞出/落在不可见区域），
+        // 强制回到 tab 行并消费本次按键——遥控焦点必须永远可见地落在某个按钮/卡片上；
+        // 另一形态：焦点停在 tab 行容器本身（descendantFocusability 之外的路径，无 item 高亮、
+        // 方向键不驱动），同样视为"选中消失"，强制转移给容器内第一个可见 tab
+        if (event.getAction() == KeyEvent.ACTION_DOWN) {
+            int code = event.getKeyCode();
+            boolean directionKey = code == KeyEvent.KEYCODE_DPAD_UP
+                    || code == KeyEvent.KEYCODE_DPAD_DOWN
+                    || code == KeyEvent.KEYCODE_DPAD_LEFT
+                    || code == KeyEvent.KEYCODE_DPAD_RIGHT;
+            if (directionKey) {
+                View current = getCurrentFocus();
+                if (current == null) {
+                    focusTabRow();
+                    return true;
+                }
+                // 焦点落在 hero 层容器上（层可获焦但无任何视觉反馈）——同属"选中消失"，
+                // 强制拉回 tab 行
+                if (current.getParent() instanceof com.github.gcd888.guoju.ui.widget.HeroBannerView) {
+                    focusTabRow();
+                    return true;
+                }
+                if (current.getId() == R.id.mGridView && current instanceof ViewGroup) {
+                    ViewGroup tabRow = (ViewGroup) current;
+                    for (int i = 0; i < tabRow.getChildCount(); i++) {
+                        View child = tabRow.getChildAt(i);
+                        if (child != null && child.isFocusable()
+                                && child.getVisibility() == View.VISIBLE) {
+                            child.requestFocus();
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
         if (topHide < 0)
             return false;
         int keyCode = event.getKeyCode();

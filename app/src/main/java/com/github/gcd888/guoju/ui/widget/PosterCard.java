@@ -38,7 +38,8 @@ public class PosterCard extends FrameLayout {
         ivPoster = findViewById(R.id.ivPoster);
         tvTitle = findViewById(R.id.tvTitle);
         tvBadge = findViewById(R.id.tvBadge);
-        FocusScaleHelper.bind(this);
+        // 海报卡用放大档 1.10（tvOS 海报聚焦观感），文字类控件保持默认 1.06
+        FocusScaleHelper.bind(this, FocusScaleHelper.POSTER_SCALE);
     }
 
     /** 加载海报图，label 用于无图时的文字占位。 */

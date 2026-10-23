@@ -1,10 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 分类 tab 焦点态：无背景无描边（聚焦提示靠文字变白，不遮挡任何内容） -->
+<!--
+    首页焦点态（tvOS 风格方案 A）：焦点项白底圆角块 + 深色文字（文字色见
+    nav_top_text_color / tab_text_color），非焦点项透明底维持原亮度。
+    左右不内缩（铺满格子，tvOS 顶部导航即全宽圆角块；内缩过大会把文字挤出白块），
+    仅上下留微量呼吸空间。
+-->
 <selector xmlns:android="http://schemas.android.com/apk/res/android">
     <item android:state_focused="true">
-        <shape>
-            <solid android:color="@android:color/transparent" />
-        </shape>
+        <inset
+            android:insetBottom="@dimen/vs_2"
+            android:insetTop="@dimen/vs_2">
+            <shape>
+                <corners android:radius="@dimen/vs_15" />
+                <solid android:color="#FFFFFFFF" />
+            </shape>
+        </inset>
     </item>
     <item android:state_focused="false">
         <shape>
