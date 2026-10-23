@@ -117,7 +117,9 @@ public class SearchSubtitleDialog extends BaseDialog {
         wd = wd.substring(0, finalLen).trim();
         subtitleSearchEt.setText(wd);
         subtitleSearchEt.setSelection(wd.length());
-        subtitleSearchEt.requestFocus();
+        // TV 端无软键盘：初始焦点落"搜索"按钮而非输入框，避免遥控器用户打开弹窗即"输入卡住"；
+        // 搜索词已自动带入并触发搜索，结果返回后 mGridView.requestFocus() 接管焦点
+        subtitleSearchBtn.requestFocus();
         search(wd);
     }
 

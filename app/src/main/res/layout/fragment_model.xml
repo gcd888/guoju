@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- 设置页（PRD 5.7.1 六组分类）：配置/主页/搜索/播放/弹幕/其他。
+     分组不显示标题文本：每组包进一张圆角卡片（shape_setting_section_card），
+     卡片间距 vs_12 > 卡片内行距 vs_10，以留白层级表达分区。
      行结构统一：每行两个 weight=1 设置项（1:1 等宽），奇数条目组末行右半 Space 补齐。
      所有设置项 id 与 ModelSettingFragment 引用一一对应，勿改名。 -->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
@@ -27,16 +29,17 @@
                 android:layout_marginTop="@dimen/vs_10"
                 android:orientation="vertical">
 
-            <!-- ========== 第一组：配置 ========== -->
-            <TextView
+            <!-- 第一组卡片：配置 -->
+            <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginBottom="@dimen/vs_6"
+                    android:layout_marginBottom="@dimen/vs_12"
+                    android:background="@drawable/shape_setting_section_card"
                     android:focusable="false"
-                    android:paddingLeft="@dimen/vs_20"
-                    android:text="配置"
-                    android:textColor="@color/atv_text_secondary"
-                    android:textSize="@dimen/ts_24" />
+                    android:orientation="vertical"
+                    android:paddingLeft="@dimen/vs_10"
+                    android:paddingTop="@dimen/vs_10"
+                    android:paddingRight="@dimen/vs_10">
 
             <LinearLayout
                     android:layout_width="match_parent"
@@ -234,17 +237,19 @@
                 </LinearLayout>
             </LinearLayout>
 
-            <!-- ========== 第二组：主页 ========== -->
-            <TextView
+            </LinearLayout>
+
+            <!-- 第二组卡片：主页 -->
+            <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="@dimen/vs_12"
-                    android:layout_marginBottom="@dimen/vs_6"
+                    android:layout_marginBottom="@dimen/vs_12"
+                    android:background="@drawable/shape_setting_section_card"
                     android:focusable="false"
-                    android:paddingLeft="@dimen/vs_20"
-                    android:text="主页"
-                    android:textColor="@color/atv_text_secondary"
-                    android:textSize="@dimen/ts_24" />
+                    android:orientation="vertical"
+                    android:paddingLeft="@dimen/vs_10"
+                    android:paddingTop="@dimen/vs_10"
+                    android:paddingRight="@dimen/vs_10">
 
             <LinearLayout
                     android:layout_width="match_parent"
@@ -437,17 +442,19 @@
                 </LinearLayout>
             </LinearLayout>
 
-            <!-- ========== 第三组：搜索 ========== -->
-            <TextView
+            </LinearLayout>
+
+            <!-- 第三组卡片：搜索 -->
+            <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="@dimen/vs_12"
-                    android:layout_marginBottom="@dimen/vs_6"
+                    android:layout_marginBottom="@dimen/vs_12"
+                    android:background="@drawable/shape_setting_section_card"
                     android:focusable="false"
-                    android:paddingLeft="@dimen/vs_20"
-                    android:text="搜索"
-                    android:textColor="@color/atv_text_secondary"
-                    android:textSize="@dimen/ts_24" />
+                    android:orientation="vertical"
+                    android:paddingLeft="@dimen/vs_10"
+                    android:paddingTop="@dimen/vs_10"
+                    android:paddingRight="@dimen/vs_10">
 
             <LinearLayout
                     android:layout_width="match_parent"
@@ -543,17 +550,19 @@
                 </LinearLayout>
             </LinearLayout>
 
-            <!-- ========== 第四组：播放 ========== -->
-            <TextView
+            </LinearLayout>
+
+            <!-- 第四组卡片：播放 -->
+            <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="@dimen/vs_12"
-                    android:layout_marginBottom="@dimen/vs_6"
+                    android:layout_marginBottom="@dimen/vs_12"
+                    android:background="@drawable/shape_setting_section_card"
                     android:focusable="false"
-                    android:paddingLeft="@dimen/vs_20"
-                    android:text="播放"
-                    android:textColor="@color/atv_text_secondary"
-                    android:textSize="@dimen/ts_24" />
+                    android:orientation="vertical"
+                    android:paddingLeft="@dimen/vs_10"
+                    android:paddingTop="@dimen/vs_10"
+                    android:paddingRight="@dimen/vs_10">
 
             <LinearLayout
                     android:layout_width="match_parent"
@@ -991,17 +1000,19 @@
                         android:layout_weight="1" />
             </LinearLayout>
 
-            <!-- ========== 第五组：弹幕 ========== -->
-            <TextView
+            </LinearLayout>
+
+            <!-- 第五组卡片：弹幕 -->
+            <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="@dimen/vs_12"
-                    android:layout_marginBottom="@dimen/vs_6"
+                    android:layout_marginBottom="@dimen/vs_12"
+                    android:background="@drawable/shape_setting_section_card"
                     android:focusable="false"
-                    android:paddingLeft="@dimen/vs_20"
-                    android:text="弹幕"
-                    android:textColor="@color/atv_text_secondary"
-                    android:textSize="@dimen/ts_24" />
+                    android:orientation="vertical"
+                    android:paddingLeft="@dimen/vs_10"
+                    android:paddingTop="@dimen/vs_10"
+                    android:paddingRight="@dimen/vs_10">
 
             <LinearLayout
                     android:layout_width="match_parent"
@@ -1099,17 +1110,19 @@
                 </LinearLayout>
             </LinearLayout>
 
-            <!-- ========== 第六组：其他 ========== -->
-            <TextView
+            </LinearLayout>
+
+            <!-- 第六组卡片：其他 -->
+            <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="@dimen/vs_12"
-                    android:layout_marginBottom="@dimen/vs_6"
+                    android:layout_marginBottom="@dimen/vs_12"
+                    android:background="@drawable/shape_setting_section_card"
                     android:focusable="false"
-                    android:paddingLeft="@dimen/vs_20"
-                    android:text="其他"
-                    android:textColor="@color/atv_text_secondary"
-                    android:textSize="@dimen/ts_24" />
+                    android:orientation="vertical"
+                    android:paddingLeft="@dimen/vs_10"
+                    android:paddingTop="@dimen/vs_10"
+                    android:paddingRight="@dimen/vs_10">
 
             <LinearLayout
                     android:layout_width="match_parent"
@@ -1420,6 +1433,8 @@
                         android:layout_marginStart="@dimen/vs_5"
                         android:layout_marginLeft="@dimen/vs_5"
                         android:layout_weight="1" />
+            </LinearLayout>
+
             </LinearLayout>
 
             <!-- 调试模式：保留但隐藏（PRD 5.7.1 已删除项，开发者模式触发显示） -->

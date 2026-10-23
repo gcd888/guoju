@@ -42,6 +42,7 @@ import com.github.gcd888.guoju.bean.SourceBean;
 import com.github.gcd888.guoju.cache.RoomDataManger;
 import com.github.gcd888.guoju.event.RefreshEvent;
 import com.github.gcd888.guoju.server.ControlManager;
+import com.chad.library.adapter.base.BaseQuickAdapter;
 import com.github.gcd888.guoju.ui.adapter.HomePageAdapter;
 import com.github.gcd888.guoju.ui.adapter.SelectDialogAdapter;
 import com.github.gcd888.guoju.ui.adapter.SortAdapter;
@@ -130,6 +131,7 @@ public class HomeActivity extends BaseActivity {
     /** tab 双击检测：上一次点击位置与时间戳；pendingTabAction 为单击已选 tab 的延迟快捷逻辑。 */
     private int lastTabClickPos = -1;
     private long lastTabClickTime = 0;
+    private long lastTabLongClickAt = 0; // tab 长按进网格的时间戳，用于吞掉长按后抬起派发的 click
     private Runnable pendingTabAction = null;
     /** 页面数据已就绪（可在两层间切换）。 */
     private volatile boolean pageDataReady = false;
@@ -292,6 +294,10 @@ public class HomeActivity extends BaseActivity {
 
             @Override
             public void onItemClick(TvRecyclerView parent, View itemView, int position) {
+                // 长按进网格后抬起会派发一次 click，忽略（防御误触单击已选 tab 的延迟筛选）
+                if (android.os.SystemClock.uptimeMillis() - lastTabLongClickAt < 800) {
+                    return;
+                }
                 // 双击 tab（400ms 内两击同位）：进入该 tab 的全屏多行网格
                 long now = android.os.SystemClock.uptimeMillis();
                 boolean doubleTab = position == lastTabClickPos && now - lastTabClickTime < 400;
@@ -322,6 +328,22 @@ public class HomeActivity extends BaseActivity {
                     };
                     mHandler.postDelayed(pendingTabAction, 400);
                 }
+            }
+        });
+
+        // 遥控器等价路径：长按确认键直接进入该 tab 的二级全屏网格
+        // （双击 OK 判定窗口 400ms 对无线遥控连按不稳，且易误触单击延迟逻辑）
+        // 挂在 BaseQuickAdapter 的 item 长按上（itemView 可聚焦，遥控长按 OK 会触发 itemView 长按）
+        this.sortAdapter.setOnItemLongClickListener(new BaseQuickAdapter.OnItemLongClickListener() {
+            @Override
+            public boolean onItemLongClick(BaseQuickAdapter adapter, View view, int position) {
+                if (!gridExpanded && position < fragments.size()) {
+                    sortFocused = position;
+                    lastTabLongClickAt = android.os.SystemClock.uptimeMillis();
+                    enterGrid();
+                    return true;
+                }
+                return false;
             }
         });
 

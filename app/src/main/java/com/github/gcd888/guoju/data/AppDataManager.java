@@ -13,7 +13,7 @@ import java.io.IOException;
 
 
 /**
- * Room DB 单例管理：实例创建（文件名版本化 tvbox.v{N}.db，无迁移脚本，升版本即换新文件）、
+ * Room DB 单例管理：实例创建（文件名版本化 guoju.v{N}.db，无迁移脚本，升版本即换新文件）、
  * 备份/恢复（文件拷贝）。历史/收藏等业务读写见 cache.RoomDataManger。
  *
  * @author pj567
@@ -21,7 +21,7 @@ import java.io.IOException;
  */
 public class AppDataManager {
     private static final int DB_FILE_VERSION = 3;
-    private static final String DB_NAME = "tvbox";
+    private static final String DB_NAME = "guoju";
     private static AppDataManager manager;
     private static AppDataBase dbInstance;
 
@@ -38,7 +38,7 @@ public class AppDataManager {
         }
     }
 
-    // 迁移策略：DB 版本走文件名（tvbox.v{DB_FILE_VERSION}.db，见 dbPath()），升版本即换新文件。
+    // 迁移策略：DB 版本走文件名（guoju.v{DB_FILE_VERSION}.db，见 dbPath()），升版本即换新文件。
     // 与 PRD"卸载重装、无迁移脚本"红线自洽；旧的 MIGRATION_1_2~4_5 已随 v2.0 文档重构删除（技术设计文档 §11-D）。
 
     static String dbPath() {
@@ -73,6 +73,9 @@ public class AppDataManager {
         if (dbInstance != null && dbInstance.isOpen()) {
             dbInstance.close();
         }
+        // Room 懒建库：全新安装尚无任何 DB 读写时文件未落盘，先打开一次写连接按 schema 建库再拷贝，
+        // 否则全新安装直接备份会命中"DB文件不存在"，连带 Hawk 配置也一并备份失败
+        get().getOpenHelper().getWritableDatabase().close();
         File db = App.getInstance().getDatabasePath(dbPath());
         if (db.exists()) {
             FileUtils.copyFile(db, path);

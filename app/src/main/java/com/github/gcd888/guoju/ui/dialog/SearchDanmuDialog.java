@@ -29,6 +29,7 @@ public class SearchDanmuDialog extends BaseDialog {
     private TvRecyclerView gridView;
     private SearchDanmuAdapter searchAdapter;
     private EditText searchInput;
+    private TextView searchButton;
     private ProgressBar loadingBar;
     private DanmuLoader danmuLoader;
     private String episode = "";
@@ -46,7 +47,7 @@ public class SearchDanmuDialog extends BaseDialog {
         loadingBar = findViewById(R.id.loadingBar);
         gridView = findViewById(R.id.mGridView);
         searchInput = findViewById(R.id.input);
-        TextView searchButton = findViewById(R.id.inputSubmit);
+        searchButton = findViewById(R.id.inputSubmit);
         searchAdapter = new SearchDanmuAdapter();
         gridView.setHasFixedSize(true);
         gridView.setLayoutManager(new V7LinearLayoutManager(getContext(), 1, false));
@@ -84,7 +85,9 @@ public class SearchDanmuDialog extends BaseDialog {
         String searchWord = word == null ? "" : word.trim();
         searchInput.setText(searchWord);
         searchInput.setSelection(searchWord.length());
-        searchInput.requestFocus();
+        // TV 端无软键盘：初始焦点落"搜索"按钮而非输入框，避免遥控器用户打开弹窗即"输入卡住"；
+        // 搜索词已自动带入并触发搜索，结果返回后 gridView.requestFocus() 接管焦点
+        searchButton.requestFocus();
         search(searchWord);
     }
 

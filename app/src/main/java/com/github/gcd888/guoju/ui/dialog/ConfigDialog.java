@@ -8,6 +8,7 @@ import android.text.TextUtils;
 import android.view.KeyEvent;
 import android.view.View;
 import android.widget.EditText;
+import android.widget.ImageView;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -17,8 +18,10 @@ import com.github.gcd888.guoju.R;
 import com.github.gcd888.guoju.api.ConfigRepo;
 import com.github.gcd888.guoju.bean.ConfigItem;
 import com.github.gcd888.guoju.bean.ConfigNodeBean;
+import com.github.gcd888.guoju.server.ControlManager;
 import com.github.gcd888.guoju.ui.activity.HomeActivity;
 import com.github.gcd888.guoju.ui.adapter.ConfigAdapter;
+import com.github.gcd888.guoju.ui.tv.QRCodeGen;
 import com.github.gcd888.guoju.util.HawkConfig;
 import com.github.gcd888.guoju.util.HistoryHelper;
 import com.github.gcd888.guoju.viewmodel.SourceViewModel;
@@ -35,6 +38,8 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+
+import me.jessyan.autosize.utils.AutoSizeUtils;
 
 /**
  * 配置弹窗（Finder 三栏式）：左=配置 / 中=仓库 / 右=线路，三列联动列表。
@@ -182,8 +187,8 @@ public class ConfigDialog extends BaseDialog {
         });
 
         findViewById(R.id.ivClose).setOnClickListener(v -> dismiss());
-        findViewById(R.id.btnScan).setOnClickListener(v -> new RemoteDialog(getContext()).show());
         findViewById(R.id.btnConfirm).setOnClickListener(v -> onConfirmClicked());
+        initPushQR();
 
         ConfigRepo.resetSession();
         for (ConfigItem item : ConfigRepo.getConfigList()) {
@@ -194,8 +199,7 @@ public class ConfigDialog extends BaseDialog {
     }
 
     /** 打开恢复链入口：须在 show 后触发——复用的填列方法带 isShowing 守卫，且 ConfigRepo.CACHE
-     * 命中时回调同步返回，构造器里调用会被守卫拦掉。
-     * 另：当前无配置时自动展开扫码推送二维码（链接主要经手机扫码推送）；已有配置不弹，直接进三栏。 */
+     * 命中时回调同步返回，构造器里调用会被守卫拦掉。 */
     @Override
     public void show() {
         super.show();
@@ -216,9 +220,16 @@ public class ConfigDialog extends BaseDialog {
             configAdapter.setSelectedUrl(first.url);
             fetchConfigIntoColumns(first);
         }
-        if (ConfigRepo.getConfigList().isEmpty()) {
-            new RemoteDialog(getContext()).show();
-        }
+    }
+
+    /** 扫码推送区（右上常驻）：生成推送服务二维码 + 展示访问地址，手机扫码即可远程推送配置。 */
+    private void initPushQR() {
+        String address = ControlManager.get().getAddress(false);
+        TextView tvPushUrl = findViewById(R.id.tvPushUrl);
+        tvPushUrl.setText(address);
+        ImageView ivQRCode = findViewById(R.id.ivQRCode);
+        ivQRCode.setImageBitmap(QRCodeGen.generateBitmap(address,
+                AutoSizeUtils.mm2px(getContext(), 100), AutoSizeUtils.mm2px(getContext(), 100)));
     }
 
     /** 初始化单列列表（布局 + 适配器；点击/长按/删除由各列单独挂接）。 */

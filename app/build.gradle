@@ -6,8 +6,8 @@ android {
     defaultConfig {
         applicationId 'com.github.gcd888.guoju'
         targetSdkVersion 28
-        versionCode 113
-        versionName '0.0.1.113'
+        versionCode 114
+        versionName '0.0.1.114'
         // 打包时间戳（配置阶段生成，随每次构建刷新），用于日志与设置页核对安装包版本
         buildConfigField "String", "BUILD_TIME", '"' + new Date().format("yyyy-MM-dd HH:mm:ss") + '"'
         multiDexEnabled true
